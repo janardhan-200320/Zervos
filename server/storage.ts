@@ -1,10 +1,16 @@
-import { type User, type InsertUser, type Onboarding, type InsertOnboarding, type Resource, type InsertResource, type ResourceBooking, type InsertResourceBooking } from "@shared/schema";
+import { type User, type InsertUser, type Onboarding, type InsertOnboarding, type Resource, type InsertResource, type ResourceBooking, type InsertResourceBooking, type UpdateUserProfile, type UserSession, type InsertUserSession } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserProfile(userId: string, profile: UpdateUserProfile): Promise<User | undefined>;
+  updateUserPassword(userId: string, newPassword: string): Promise<boolean>;
+  getUserSessions(userId: string): Promise<UserSession[]>;
+  createUserSession(session: InsertUserSession): Promise<UserSession>;
+  deleteUserSession(sessionId: string): Promise<void>;
+  deleteUser(userId: string): Promise<void>;
   createOnboarding(onboarding: InsertOnboarding): Promise<Onboarding>;
   getOnboarding(id: string): Promise<Onboarding | undefined>;
   getAllOnboardings(): Promise<Onboarding[]>;
@@ -34,6 +40,7 @@ export class MemStorage implements IStorage {
   private resources: Map<string, Resource>;
   private resourceBookings: Map<string, ResourceBooking>;
   private appointments: Map<string, Appointment>;
+  private userSessions: Map<string, UserSession>;
 
   constructor() {
     this.users = new Map();
@@ -41,6 +48,7 @@ export class MemStorage implements IStorage {
     this.resources = new Map();
     this.resourceBookings = new Map();
     this.appointments = new Map();
+    this.userSessions = new Map();
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -55,9 +63,89 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id };
+    const now = new Date().toISOString();
+    const user: User = { 
+      ...insertUser, 
+      id,
+      name: null,
+      email: null,
+      phone: null,
+      timezone: "America/New_York",
+      avatar: null,
+      emailVerified: "false",
+      twoFactorEnabled: "false",
+      twoFactorSecret: null,
+      notificationPreferences: { email: true, sms: true, push: false },
+      createdAt: now,
+      updatedAt: now,
+    };
     this.users.set(id, user);
     return user;
+  }
+
+  async updateUserProfile(userId: string, profile: UpdateUserProfile): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) {
+      return undefined;
+    }
+
+    const updated: User = {
+      ...user,
+      ...profile,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.users.set(userId, updated);
+    return updated;
+  }
+
+  async updateUserPassword(userId: string, newPassword: string): Promise<boolean> {
+    const user = this.users.get(userId);
+    if (!user) {
+      return false;
+    }
+
+    const updated: User = {
+      ...user,
+      password: newPassword,
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.users.set(userId, updated);
+    return true;
+  }
+
+  async getUserSessions(userId: string): Promise<UserSession[]> {
+    return Array.from(this.userSessions.values()).filter(
+      session => session.userId === userId
+    );
+  }
+
+  async createUserSession(insertSession: InsertUserSession): Promise<UserSession> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const session: UserSession = {
+      ...insertSession,
+      id,
+      deviceInfo: insertSession.deviceInfo || null,
+      ipAddress: insertSession.ipAddress || null,
+      location: insertSession.location || null,
+      lastActive: now,
+      createdAt: now,
+    };
+    this.userSessions.set(id, session);
+    return session;
+  }
+
+  async deleteUserSession(sessionId: string): Promise<void> {
+    this.userSessions.delete(sessionId);
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    this.users.delete(userId);
+    // Also delete user's sessions
+    const userSessions = await this.getUserSessions(userId);
+    userSessions.forEach(session => this.userSessions.delete(session.id));
   }
 
   async createOnboarding(insertOnboarding: InsertOnboarding): Promise<Onboarding> {

@@ -12,6 +12,8 @@ import AppointmentsPage from "@/pages/AppointmentsNew";
 import SessionsPage from "@/pages/sessions";
 import CalendarPage from "@/pages/calendar";
 import TeamMembersPage from "@/pages/team-members";
+import TeamAttendancePage from "@/pages/team-attendance";
+import TeamReportsPage from "@/pages/team-reports";
 import BookingPagesPage from "@/pages/booking-pages";
 import ServicesPage from "@/pages/services";
 import ProductsPage from "@/pages/products";
@@ -37,6 +39,7 @@ import TopProgressBar from "@/components/TopProgressBar";
 import TeamLogin from "@/pages/team/TeamLogin";
 import TeamDashboard from "@/pages/team/TeamDashboard";
 import TeamPublicView from "@/pages/team/TeamPublicView";
+import FeedbackForm from "@/pages/feedback-form";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useEffect } from "react";
 
@@ -45,6 +48,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Onboarding} />
       <Route path="/success" component={Success} />
+      <Route path="/feedback" component={FeedbackForm} />
       <Route path="/book/:serviceId" component={PublicBookingPage} />
   <Route path="/team/login" component={TeamLogin} />
   <Route path="/team" component={TeamDashboard} />
@@ -58,6 +62,8 @@ function Router() {
       <Route path="/dashboard/subscription-plans" component={SubscriptionPlansPage} />
       <Route path="/dashboard/help-support" component={HelpSupportPage} />
       <Route path="/dashboard/team-members" component={TeamMembersPage} />
+      <Route path="/dashboard/team-attendance" component={TeamAttendancePage} />
+      <Route path="/dashboard/team-reports" component={TeamReportsPage} />
       <Route path="/dashboard/booking-pages" component={BookingPagesPage} />
       <Route path="/dashboard/services" component={ServicesPage} />
       <Route path="/dashboard/products" component={ProductsPage} />

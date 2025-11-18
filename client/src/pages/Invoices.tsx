@@ -28,6 +28,8 @@ import {
   Calendar,
   Mail,
   Plus,
+  Receipt,
+  FileCheck,
 } from 'lucide-react';
 import {
   getAllInvoices,
@@ -37,7 +39,9 @@ import {
   type Invoice,
 } from '@/lib/invoice-utils';
 import InvoiceTemplate from '@/components/InvoiceTemplate';
+import { POSInvoice } from '@/components/POSInvoice';
 import { useToast } from '@/hooks/use-toast';
+import ReactDOM from 'react-dom/client';
 
 export default function InvoicesPage() {
   const { toast } = useToast();
@@ -265,10 +269,131 @@ export default function InvoicesPage() {
     }
   };
 
-  const handlePrintInvoice = (invoice: Invoice) => {
-    setSelectedInvoice(invoice);
-    setIsViewModalOpen(true);
-    // Print will be triggered from the InvoiceTemplate component
+  const handlePrintInvoice = (invoice: Invoice, showTax: boolean) => {
+    try {
+      // Get company data
+      const companyData = localStorage.getItem('zervos_company');
+      const company = companyData ? JSON.parse(companyData) : {
+        name: 'Your Business',
+        businessType: 'Services',
+        address: '',
+        city: '',
+        state: '',
+        pincode: '',
+        phone: '',
+        email: '',
+        gst: '',
+      };
+
+      // Transform invoice to transaction format
+      const transaction = {
+        id: invoice.invoiceId,
+        date: invoice.issueDate,
+        customer: {
+          name: invoice.customerName,
+          email: invoice.customerEmail,
+          phone: invoice.customerPhone,
+        },
+        items: [{
+          name: invoice.serviceName || 'Service',
+          qty: 1,
+          price: invoice.amount,
+          assignedPerson: '',
+        }],
+        amount: invoice.amount,
+        staff: '',
+        paymentMethod: invoice.paymentMethod || 'Cash',
+      };
+
+      // Create a temporary container
+      const printContainer = document.createElement('div');
+      printContainer.style.position = 'absolute';
+      printContainer.style.left = '-9999px';
+      document.body.appendChild(printContainer);
+
+      // Render the invoice
+      const root = ReactDOM.createRoot(printContainer);
+      root.render(
+        <POSInvoice 
+          transaction={transaction} 
+          company={company} 
+          showTax={showTax}
+        />
+      );
+
+      // Wait for render then print
+      setTimeout(() => {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Receipt ${invoice.invoiceId}</title>
+                <meta charset="UTF-8">
+                <style>
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body { 
+                    font-family: 'Courier New', monospace; 
+                    margin: 0; 
+                    padding: 0;
+                    background: #f5f5f5;
+                    display: flex;
+                    justify-content: center;
+                    align-items: flex-start;
+                    min-height: 100vh;
+                    padding: 20px;
+                  }
+                  .receipt-container {
+                    background: white;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                  }
+                  @media print {
+                    body { 
+                      margin: 0; 
+                      padding: 0; 
+                      background: white;
+                    }
+                    .receipt-container {
+                      box-shadow: none;
+                    }
+                    button { display: none !important; }
+                    @page {
+                      size: 80mm auto;
+                      margin: 0;
+                    }
+                  }
+                  .no-print { display: block; }
+                  @media print {
+                    .no-print { display: none !important; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="receipt-container">
+                  ${printContainer.innerHTML}
+                </div>
+                <div class="no-print" style="text-align: center; margin-top: 20px; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                  <button onclick="window.print()" style="padding: 12px 24px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px; font-size: 14px; font-weight: 600;">🖨️ Print Receipt</button>
+                  <button onclick="window.close()" style="padding: 12px 24px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">✕ Close</button>
+                </div>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+        }
+
+        // Cleanup
+        document.body.removeChild(printContainer);
+      }, 100);
+
+      toast({ 
+        title: 'Receipt Generated', 
+        description: `${showTax ? 'With Tax' : 'Without Tax'} receipt opened for printing`,
+      });
+    } catch (error) {
+      toast({ title: 'Print Failed', description: (error as Error).message, variant: 'destructive' });
+    }
   };
 
   return (
@@ -431,11 +556,37 @@ export default function InvoicesPage() {
                           >
                             <Eye size={16} />
                           </Button>
+                          <div className="relative group">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Print Bill"
+                              className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                            >
+                              <Receipt size={16} />
+                            </Button>
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[160px]">
+                              <button
+                                onClick={() => handlePrintInvoice(invoice, true)}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-t-lg"
+                              >
+                                <FileCheck size={14} className="text-green-600" />
+                                <span>With Tax</span>
+                              </button>
+                              <button
+                                onClick={() => handlePrintInvoice(invoice, false)}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-b-lg"
+                              >
+                                <FileText size={14} className="text-blue-600" />
+                                <span>Without Tax</span>
+                              </button>
+                            </div>
+                          </div>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleDownloadInvoice(invoice)}
-                            title="Download Invoice"
+                            title="Download PDF"
                           >
                             <Download size={16} />
                           </Button>

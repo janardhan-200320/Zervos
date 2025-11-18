@@ -1,0 +1,89 @@
+"═══════════════════════════════════════════════════════════════"
+"           BULK LEADS COMPREHENSIVE ANALYTICS REPORT"
+"═══════════════════════════════════════════════════════════════"
+"Generated: 14 Nov 2025, 20:30"
+"Currency: Indian Rupees (₹)"
+
+"━━━ KEY METRICS SUMMARY ━━━"
+"Total Leads in Pipeline",5
+"Total Estimated Deal Value","₹5,75,000.00"
+"Total Pipeline Value","₹6,20,000.00"
+"Total Monthly Recurring Revenue (MRR)","₹45,000.00"
+"Total Annual Recurring Revenue (ARR)","₹5,40,000.00"
+"Total Items/Services Count",47
+
+"━━━ STATISTICAL ANALYSIS ━━━"
+"Average Deal Size","₹1,15,000.00"
+"Median Deal Size","₹1,00,000.00"
+"Most Common Priority Level","HIGH"
+
+"━━━ STATUS BREAKDOWN ━━━"
+"Prospect Leads",2
+"Negotiating Deals",2
+"Committed Deals",1
+"Closed Deals",0
+
+"━━━ TOP 5 HIGHEST VALUE LEADS ━━━"
+"Rank","Lead ID","Company","Contact Person","Decision Maker","Status","Estimated Deal (₹)","Priority"
+"#1","BL-001","TechVenture Solutions Pvt Ltd","Rajesh Kumar","CTO - Amit Sharma","Negotiating","₹2,50,000.00","HIGH"
+"#2","BL-002","Global Healthcare Systems","Priya Mehta","CEO - Dr. Suresh Patel","Committed","₹1,75,000.00","HIGH"
+"#3","BL-003","Smart Retail India","Anil Verma","Operations Director - Neha Singh","Prospect","₹1,00,000.00","MEDIUM"
+"#4","BL-004","EduTech Innovations","Kavita Desai","Founder - Rohit Malhotra","Negotiating","₹75,000.00","HIGH"
+"#5","BL-005","Manufacturing Plus Ltd","Sandeep Reddy","Purchase Manager - Lakshmi Iyer","Prospect","₹50,000.00","MEDIUM"
+
+"═══════════════════════════════════════════════════════════════"
+"                    DETAILED LEADS DATA"
+"═══════════════════════════════════════════════════════════════"
+
+"Lead ID","Status","Priority","Deal Probability (%)","Company","Contact Person","Decision Maker","Email","Phone","Industry","Company Size","Source","Assigned To","Estimated Deal (₹)","Total Value (₹)","MRR (₹)","ARR (₹)","Items Count","Items Ordered","Services Requested","Budget Range","Timeline","Days Since Created","Days Until Follow-up","Follow-up Date","Created Date","Last Contact","Pain Points","Competitors","Special Requirements","Internal Notes","Next Action"
+"BL-001","Negotiating","HIGH","50","TechVenture Solutions Pvt Ltd","Rajesh Kumar","CTO - Amit Sharma","rajesh.kumar@techventure.in","+91 98765 43210","Technology","200-500 employees","LinkedIn","Arjun Patel","₹2,50,000.00","₹2,65,000.00","₹15,000.00","₹1,80,000.00","15","Enterprise Software Licenses | Cloud Storage (5TB) | API Integration | Security Suite | Training Modules","Cloud Migration | DevOps Setup | 24/7 Support | Custom Integration | Quarterly Reviews","₹250,000 - ₹500,000","3-6 months","12","7","21 Nov 2025","02 Nov 2025","10 Nov 2025","Legacy system integration issues | High maintenance costs | Scalability concerns | Security compliance","Zoho | Salesforce | Microsoft Azure","ISO 27001 compliance required | On-premise backup | Custom reporting dashboard","Initial demo completed. Strong interest in enterprise package. Waiting for budget approval from finance team.","Send proposal"
+"BL-002","Committed","HIGH","80","Global Healthcare Systems","Priya Mehta","CEO - Dr. Suresh Patel","priya.mehta@globalhealthcare.com","+91 99887 76655","Healthcare","500-1000 employees","Referral","Sneha Kapoor","₹1,75,000.00","₹1,85,000.00","₹12,000.00","₹1,44,000.00","12","Medical Equipment | Patient Management Software | Billing System | Inventory Tracker","Implementation | Staff Training | Data Migration | Annual Maintenance","₹100,000 - ₹250,000","1-3 months","18","3","17 Nov 2025","27 Oct 2025","12 Nov 2025","Manual record keeping | Patient data security | Appointment scheduling bottlenecks | Billing errors","Oracle Health | Epic Systems | Practo","HIPAA compliance | Integration with existing lab systems | Mobile app access","Signed LOI. Contract review in progress. Very positive feedback from pilot program. CEO personally invested in project success.","Prepare contract"
+"BL-003","Prospect","MEDIUM","25","Smart Retail India","Anil Verma","Operations Director - Neha Singh","anil.verma@smartretail.co.in","+91 98123 45678","Retail","100-500 employees","Website","Vikram Singh","₹1,00,000.00","₹1,10,000.00","₹8,000.00","₹96,000.00","10","POS Systems (10 units) | Inventory Software | Barcode Scanners | Receipt Printers","Installation | Training | Integration with accounting | 6-month support","₹50,000 - ₹100,000","3-6 months","8","14","28 Nov 2025","06 Nov 2025","Not Set","Inventory mismanagement | Lack of real-time data | Multiple store coordination | Theft prevention","Square | Shopify POS | Lightspeed","Must work offline | Multi-location sync | GST compliant billing","Initial inquiry via website form. Scheduled discovery call for next week. Researching competitors actively.","Schedule initial call"
+"BL-004","Negotiating","HIGH","50","EduTech Innovations","Kavita Desai","Founder - Rohit Malhotra","kavita@edutech.in","+91 97654 32109","Education","50-200 employees","Trade Show","Priya Sharma","₹75,000.00","₹80,000.00","₹5,000.00","₹60,000.00","8","Learning Management System | Student Portal | Mobile App | Analytics Dashboard","Customization | Content Migration | Teacher Training | Technical Support","₹50,000 - ₹100,000","1-3 months","22","5","19 Nov 2025","23 Oct 2025","08 Nov 2025","Manual grading system | Poor parent communication | Limited online presence | Attendance tracking issues","Google Classroom | Moodle | Blackboard","Multi-language support (Hindi, English) | Gamification features | Parent app included","Met at EdTech Summit Mumbai. Founder very enthusiastic. Demo scheduled for this Friday. Negotiating on pricing and support terms.","Send proposal"
+"BL-005","Prospect","MEDIUM","25","Manufacturing Plus Ltd","Sandeep Reddy","Purchase Manager - Lakshmi Iyer","sandeep@manufacturingplus.com","+91 96321 87654","Manufacturing","200-500 employees","Cold Outreach","Amit Gupta","₹50,000.00","₹55,000.00","₹5,000.00","₹60,000.00","2","ERP System | Production Tracking Module","Implementation | Worker Training | Monthly Support","₹25,000 - ₹50,000","6-12 months","5","10","24 Nov 2025","09 Nov 2025","Not Set","Production delays | Quality control issues | Supply chain visibility | Manual reporting","SAP | Oracle NetSuite | Tally","Integration with existing machinery | Worker-friendly interface | Real-time production dashboards","Outbound call campaign. Initial interest expressed. Purchase manager requested detailed product brochure and case studies.","Schedule initial call"
+
+"═══════════════════════════════════════════════════════════════"
+"                      TOTALS & SUMMARY"
+"═══════════════════════════════════════════════════════════════"
+"Metric","Value"
+"Total Leads",5
+"Total Estimated Deals","₹5,75,000.00"
+"Total Pipeline Value","₹6,20,000.00"
+"Total MRR","₹45,000.00"
+"Total ARR","₹5,40,000.00"
+"Total Items Count",47
+"Average Deal Size","₹1,15,000.00"
+"Median Deal Size","₹1,00,000.00"
+
+"═══════════════════════════════════════════════════════════════"
+"                  COLUMN REFERENCE GUIDE"
+"═══════════════════════════════════════════════════════════════"
+"Column Name","Description"
+"Lead ID","Unique internal identifier for tracking"
+"Status","Current stage: Prospect → Negotiating → Committed → Closed"
+"Priority","Urgency level: HIGH / MEDIUM / LOW"
+"Deal Probability (%)","Success likelihood: Prospect=25% | Negotiating=50% | Committed=80% | Closed=100%"
+"Estimated Deal (₹)","Sales team projected revenue for this opportunity"
+"Total Value (₹)","Calculated sum of all items and services"
+"MRR (₹)","Monthly Recurring Revenue - ongoing monthly income"
+"ARR (₹)","Annual Recurring Revenue - calculated as MRR × 12"
+"Days Since Created","Number of days in pipeline (auto-calculated)"
+"Days Until Follow-up","Days remaining until scheduled follow-up (negative = overdue)"
+"Items Ordered","Products/items requested (separated by |)"
+"Services Requested","Services needed (separated by |)"
+"Pain Points","Customer challenges we can solve"
+"Competitors","Other vendors being considered"
+"Next Action","Recommended next step based on current status"
+
+"═══════════════════════════════════════════════════════════════"
+"                    IMPORTANT NOTES"
+"═══════════════════════════════════════════════════════════════"
+"• All currency values are in Indian Rupees (₹)"
+"• Use Excel or Google Sheets for best viewing experience"
+"• Enable filters on header row for easy data analysis"
+"• Create pivot tables using Status, Priority, or Industry columns"
+"• Sort by Estimated Deal to prioritize high-value opportunities"
+"• Filter by Days Until Follow-up to identify urgent actions"
+"• Report generated on: 14 Nov 2025, 20:30:45"
+"• For questions or support, contact your sales manager"
+"═══════════════════════════════════════════════════════════════"

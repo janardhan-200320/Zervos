@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import FeedbackQRCode from '@/components/FeedbackQRCode';
 import {
   BarChart,
   Bar,
@@ -40,16 +43,29 @@ import {
   Zap,
   Award,
   FileText,
+  QrCode,
+  MessageSquare,
+  ThumbsUp,
 } from 'lucide-react';
 
 const DashboardOverview = () => {
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('month');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showQRDialog, setShowQRDialog] = useState(false);
 
   // Load data from localStorage
   const appointmentsData = useMemo(() => {
     try {
       const data = localStorage.getItem('zervos_appointments');
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }, [refreshKey]);
+
+  const feedbackData = useMemo(() => {
+    try {
+      const data = localStorage.getItem('zervos_feedback');
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
@@ -76,11 +92,16 @@ const DashboardOverview = () => {
 
   useEffect(() => {
     const handleStorageChange = () => setRefreshKey(prev => prev + 1);
+    const handleFeedbackSubmitted = () => setRefreshKey(prev => prev + 1);
+    
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('localStorageChanged', handleStorageChange);
+    window.addEventListener('feedback-submitted', handleFeedbackSubmitted);
+    
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('localStorageChanged', handleStorageChange);
+      window.removeEventListener('feedback-submitted', handleFeedbackSubmitted);
     };
   }, []);
 
@@ -140,14 +161,44 @@ const DashboardOverview = () => {
     { day: 'Sun', bookings: 10, revenue: 3000 },
   ];
 
-  // Customer satisfaction ratings
-  const satisfactionData = [
-    { rating: '5 Stars', count: 245, percentage: 68 },
-    { rating: '4 Stars', count: 78, percentage: 22 },
-    { rating: '3 Stars', count: 24, percentage: 7 },
-    { rating: '2 Stars', count: 8, percentage: 2 },
-    { rating: '1 Star', count: 5, percentage: 1 },
-  ];
+  // Customer satisfaction ratings from real feedback
+  const satisfactionData = useMemo(() => {
+    if (feedbackData.length === 0) {
+      return [
+        { rating: '5 Stars', count: 245, percentage: 68 },
+        { rating: '4 Stars', count: 78, percentage: 22 },
+        { rating: '3 Stars', count: 24, percentage: 7 },
+        { rating: '2 Stars', count: 8, percentage: 2 },
+        { rating: '1 Star', count: 5, percentage: 1 },
+      ];
+    }
+
+    const ratingCounts = {
+      5: feedbackData.filter((f: any) => f.rating === 5).length,
+      4: feedbackData.filter((f: any) => f.rating === 4).length,
+      3: feedbackData.filter((f: any) => f.rating === 3).length,
+      2: feedbackData.filter((f: any) => f.rating === 2).length,
+      1: feedbackData.filter((f: any) => f.rating === 1).length,
+    };
+
+    const total = feedbackData.length;
+
+    return [
+      { rating: '5 Stars', count: ratingCounts[5], percentage: Math.round((ratingCounts[5] / total) * 100) },
+      { rating: '4 Stars', count: ratingCounts[4], percentage: Math.round((ratingCounts[4] / total) * 100) },
+      { rating: '3 Stars', count: ratingCounts[3], percentage: Math.round((ratingCounts[3] / total) * 100) },
+      { rating: '2 Stars', count: ratingCounts[2], percentage: Math.round((ratingCounts[2] / total) * 100) },
+      { rating: '1 Star', count: ratingCounts[1], percentage: Math.round((ratingCounts[1] / total) * 100) },
+    ];
+  }, [feedbackData]);
+
+  const averageRating = useMemo(() => {
+    if (feedbackData.length === 0) return 4.6;
+    const sum = feedbackData.reduce((acc: number, f: any) => acc + f.rating, 0);
+    return (sum / feedbackData.length).toFixed(1);
+  }, [feedbackData]);
+
+  const totalReviews = feedbackData.length || 360;
 
   const stats = [
     {
@@ -465,21 +516,136 @@ const DashboardOverview = () => {
           </motion.div>
         </div>
 
+        {/* Feedback Collection Section */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* QR Code and Link */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            <Card className="border-0 bg-gradient-to-br from-purple-50 to-blue-50 p-6 shadow-lg">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                    <QrCode className="h-5 w-5 text-purple-600" />
+                    Feedback QR Code
+                  </h3>
+                  <p className="text-sm text-slate-600">Scan or share with customers</p>
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-lg mb-4">
+                <FeedbackQRCode size={150} />
+              </div>
+
+              <Button
+                onClick={() => setShowQRDialog(true)}
+                variant="outline"
+                className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
+              >
+                View Full QR Code
+              </Button>
+
+              <p className="text-xs text-slate-500 mt-3 text-center">
+                Share this QR code for customers to leave feedback
+              </p>
+            </Card>
+          </motion.div>
+
+          {/* Recent Feedback */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.65 }}
+            className="lg:col-span-2"
+          >
+            <Card className="border-0 bg-white p-6 shadow-lg">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5 text-blue-600" />
+                    Recent Feedback
+                  </h3>
+                  <p className="text-sm text-slate-600">
+                    {feedbackData.length} total reviews received
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg bg-yellow-50 px-4 py-2">
+                  <Star className="h-5 w-5 fill-yellow-500 text-yellow-500" />
+                  <span className="text-lg font-bold text-slate-900">{averageRating}</span>
+                </div>
+              </div>
+
+              <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                {feedbackData.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <MessageSquare className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+                    <p>No feedback received yet</p>
+                    <p className="text-sm mt-1">Share the QR code to collect reviews</p>
+                  </div>
+                ) : (
+                  feedbackData.slice(0, 5).map((feedback: any, index: number) => (
+                    <motion.div
+                      key={feedback.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.7 + index * 0.05 }}
+                      className="border border-slate-200 rounded-lg p-4 hover:border-slate-300 transition-colors"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-semibold text-slate-900">{feedback.customerName}</h4>
+                          {feedback.service && (
+                            <p className="text-xs text-slate-600">{feedback.service}</p>
+                          )}
+                          {feedback.attendee && (
+                            <p className="text-xs text-slate-500">by {feedback.attendee}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: feedback.rating }).map((_, i) => (
+                            <Star key={i} className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                          ))}
+                        </div>
+                      </div>
+                      {feedback.comment && (
+                        <p className="text-sm text-slate-700 mt-2">{feedback.comment}</p>
+                      )}
+                      {feedback.wouldRecommend !== null && (
+                        <div className="mt-2 flex items-center gap-1 text-xs">
+                          <ThumbsUp className={`h-3 w-3 ${feedback.wouldRecommend ? 'text-green-600' : 'text-red-600'}`} />
+                          <span className={feedback.wouldRecommend ? 'text-green-600' : 'text-red-600'}>
+                            {feedback.wouldRecommend ? 'Would recommend' : 'Would not recommend'}
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-xs text-slate-400 mt-2">
+                        {new Date(feedback.date).toLocaleDateString()}
+                      </p>
+                    </motion.div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </motion.div>
+        </div>
+
         {/* Customer Satisfaction Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
+          transition={{ delay: 0.7 }}
         >
           <Card className="border-0 bg-white p-6 shadow-lg">
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Customer Satisfaction Ratings</h3>
-                <p className="text-sm text-slate-600">Based on 360 reviews</p>
+                <p className="text-sm text-slate-600">Based on {totalReviews} reviews</p>
               </div>
               <div className="flex items-center gap-2 rounded-lg bg-yellow-50 px-4 py-2">
                 <Star className="h-5 w-5 fill-yellow-500 text-yellow-500" />
-                <span className="text-lg font-bold text-slate-900">4.6</span>
+                <span className="text-lg font-bold text-slate-900">{averageRating}</span>
               </div>
             </div>
             <div className="space-y-4">
@@ -870,6 +1036,24 @@ const DashboardOverview = () => {
           </Card>
         </motion.div>
       </div>
+
+      {/* QR Code Dialog */}
+      <Dialog open={showQRDialog} onOpenChange={setShowQRDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-5 w-5 text-purple-600" />
+              Feedback QR Code
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-slate-600 mb-4">
+              Share this QR code with customers after their appointments. They can scan it to leave feedback about their experience.
+            </p>
+            <FeedbackQRCode size={300} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };

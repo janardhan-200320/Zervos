@@ -13,7 +13,17 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Search, Filter, Calendar, TrendingUp, DollarSign } from 'lucide-react';
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Download, Printer, Eye } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Download, Printer, Eye, FileSpreadsheet, FileText, Receipt, FileCheck } from 'lucide-react';
+import { 
+  exportToCSV, 
+  exportToExcel, 
+  exportToPDF, 
+  printTransactions,
+  printSingleTransaction,
+  type Transaction as POSTransaction
+} from '@/lib/pos-export-utils';
+import { POSInvoice } from '@/components/POSInvoice';
+import ReactDOM from 'react-dom/client';
 
 type Product = {
   id: string;
@@ -23,20 +33,7 @@ type Product = {
   category?: string; // domain like Beauty, Spa, Wellness
 };
 
-type Transaction = {
-  id: string;
-  customer: { name: string; email?: string };
-  items: { productId: string; qty: number; price: number }[];
-  date: string;
-  amount: number; // cents
-  status: 'Completed' | 'Pending' | 'Refunded';
-  staff?: string;
-  openBalance?: number;
-  totalReturn?: number;
-  balanceAmount?: number;
-  orderValue?: number;
-  currency?: string;
-};
+type Transaction = POSTransaction;
 
 // Sample services (prices in cents). These represent service offerings like on the booking system.
 const SAMPLE_PRODUCTS: Product[] = [
@@ -371,66 +368,196 @@ export default function POSPage() {
     setReceiptOpen(true);
   };
 
-  // Export helpers
-  const downloadBlob = (data: BlobPart, filename: string, mime = 'text/csv') => {
-    const blob = new Blob([data], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportToCSV = (rows: any[], filename = 'pos-export.csv') => {
-    if (!rows || rows.length === 0) {
-      toast({ title: 'No data', description: 'Nothing to export' });
+  // Export handlers
+  const handleExportCSV = () => {
+    if (filteredTransactions.length === 0) {
+      toast({ title: 'No Data', description: 'No transactions to export', variant: 'destructive' });
       return;
     }
-    const keys = Object.keys(rows[0]);
-    const csv = [keys.join(','), ...rows.map(r => keys.map(k => `"${String(r[k] ?? '')}"`).join(','))].join('\n');
-    downloadBlob(csv, filename, 'text/csv');
-    setExportOpen(false);
-  };
-
-  const exportToExcel = (rows: any[], filename = 'pos-export.xls') => {
-    // Simple Excel-compatible CSV wrapper (older .xls) to avoid adding dependencies
-    exportToCSV(rows, filename);
-  };
-
-  const exportToPDF = async () => {
-    // Try using html2pdf if available, otherwise open print window
-    if (printableRef.current) {
-      try {
-        const html2pdf = (await import('html2pdf.js')) as any;
-        const opt = { margin: 0.5, filename: 'pos-export.pdf' };
-        html2pdf().from(printableRef.current).set(opt).save();
-      } catch (e) {
-        // fallback to print
-        const w = window.open('', '_blank');
-        if (!w) return;
-        w.document.write(printableRef.current.innerHTML);
-        w.document.close();
-        w.print();
-        w.close();
-      }
+    try {
+      exportToCSV(filteredTransactions, `pos-transactions-${new Date().toISOString().split('T')[0]}.csv`);
+      toast({ 
+        title: '✅ CSV Downloaded', 
+        description: `${filteredTransactions.length} transaction${filteredTransactions.length !== 1 ? 's' : ''} exported successfully` 
+      });
+      setExportOpen(false);
+    } catch (error) {
+      toast({ title: 'Export Failed', description: (error as Error).message, variant: 'destructive' });
     }
-    setExportOpen(false);
   };
 
-  const handlePrint = () => {
-    if (printableRef.current) {
-      const w = window.open('', '_blank');
-      if (!w) return;
-      w.document.write(`<!doctype html><html><head><title>Receipt</title></head><body>${printableRef.current.innerHTML}</body></html>`);
-      w.document.close();
-      w.focus();
-      w.print();
-      w.close();
+  const handleExportExcel = () => {
+    if (filteredTransactions.length === 0) {
+      toast({ title: 'No Data', description: 'No transactions to export', variant: 'destructive' });
+      return;
     }
-    setExportOpen(false);
+    try {
+      exportToExcel(filteredTransactions, `pos-transactions-${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast({ 
+        title: '✅ Excel Downloaded', 
+        description: 'Multi-sheet workbook with Summary, Transactions, Items & Staff Performance' 
+      });
+      setExportOpen(false);
+    } catch (error) {
+      toast({ title: 'Export Failed', description: (error as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleExportPDF = () => {
+    if (filteredTransactions.length === 0) {
+      toast({ title: 'No Data', description: 'No transactions to export', variant: 'destructive' });
+      return;
+    }
+    try {
+      exportToPDF(filteredTransactions, `pos-transactions-${new Date().toISOString().split('T')[0]}.pdf`);
+      toast({ 
+        title: '✅ PDF Downloaded', 
+        description: 'Professional transaction report generated successfully' 
+      });
+      setExportOpen(false);
+    } catch (error) {
+      toast({ title: 'Export Failed', description: (error as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handlePrintAll = () => {
+    if (filteredTransactions.length === 0) {
+      toast({ title: 'No Data', description: 'No transactions to print', variant: 'destructive' });
+      return;
+    }
+    try {
+      printTransactions(filteredTransactions);
+      setExportOpen(false);
+    } catch (error) {
+      toast({ title: 'Print Failed', description: (error as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handlePrintSingle = (tx: Transaction) => {
+    try {
+      printSingleTransaction(tx);
+    } catch (error) {
+      toast({ title: 'Print Failed', description: (error as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handlePrintInvoice = (tx: Transaction, showTax: boolean) => {
+    try {
+      // Get company data
+      const companyData = localStorage.getItem('zervos_company');
+      const company = companyData ? JSON.parse(companyData) : {
+        name: 'Your Business',
+        businessType: 'Services',
+        address: '',
+        city: '',
+        state: '',
+        pincode: '',
+        phone: '',
+        email: '',
+        gst: '',
+      };
+
+      // Transform transaction items to match InvoiceItem format
+      const transformedTransaction = {
+        ...tx,
+        paymentMethod: tx.paymentMethod || 'Cash',
+        items: tx.items.map((item: any) => ({
+          name: item.name || 'Product',
+          qty: item.qty,
+          price: item.price,
+          assignedPerson: item.assignedPerson || '',
+        })),
+      };
+
+      // Create a temporary container
+      const printContainer = document.createElement('div');
+      printContainer.style.position = 'absolute';
+      printContainer.style.left = '-9999px';
+      document.body.appendChild(printContainer);
+
+      // Render the invoice
+      const root = ReactDOM.createRoot(printContainer);
+      root.render(
+        <POSInvoice 
+          transaction={transformedTransaction} 
+          company={company} 
+          showTax={showTax}
+        />
+      );
+
+      // Wait for render then print
+      setTimeout(() => {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Receipt ${tx.id}</title>
+                <meta charset="UTF-8">
+                <style>
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body { 
+                    font-family: 'Courier New', monospace; 
+                    margin: 0; 
+                    padding: 0;
+                    background: #f5f5f5;
+                    display: flex;
+                    justify-content: center;
+                    align-items: flex-start;
+                    min-height: 100vh;
+                    padding: 20px;
+                  }
+                  .receipt-container {
+                    background: white;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                  }
+                  @media print {
+                    body { 
+                      margin: 0; 
+                      padding: 0; 
+                      background: white;
+                    }
+                    .receipt-container {
+                      box-shadow: none;
+                    }
+                    button { display: none !important; }
+                    @page {
+                      size: 80mm auto;
+                      margin: 0;
+                    }
+                  }
+                  .no-print { display: block; }
+                  @media print {
+                    .no-print { display: none !important; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="receipt-container">
+                  ${printContainer.innerHTML}
+                </div>
+                <div class="no-print" style="text-align: center; margin-top: 20px; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                  <button onclick="window.print()" style="padding: 12px 24px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px; font-size: 14px; font-weight: 600;">🖨️ Print Receipt</button>
+                  <button onclick="window.close()" style="padding: 12px 24px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600;">✕ Close</button>
+                </div>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+        }
+
+        // Cleanup
+        document.body.removeChild(printContainer);
+      }, 100);
+
+      toast({ 
+        title: 'Invoice Generated', 
+        description: `${showTax ? 'With Tax' : 'Without Tax'} invoice opened in new window`,
+      });
+    } catch (error) {
+      toast({ title: 'Print Failed', description: (error as Error).message, variant: 'destructive' });
+    }
   };
 
   return (
@@ -443,15 +570,64 @@ export default function POSPage() {
           </div>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Button onClick={() => setExportOpen((s) => !s)} variant={undefined} className="bg-slate-100 text-slate-700 hover:bg-slate-200 flex items-center gap-2">
-                  <Download size={14} /> Export
+                <Button 
+                  onClick={() => setExportOpen((s) => !s)} 
+                  variant={undefined} 
+                  className="bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 hover:from-slate-200 hover:to-slate-300 flex items-center gap-2 relative"
+                  disabled={filteredTransactions.length === 0}
+                >
+                  <Download size={16} /> Export
+                  {filteredTransactions.length > 0 && (
+                    <span className="ml-1 bg-brand-600 text-white text-xs px-2 py-0.5 rounded-full font-semibold">
+                      {filteredTransactions.length}
+                    </span>
+                  )}
                 </Button>
                 {exportOpen && (
-                  <div className="absolute right-0 mt-2 w-44 rounded-md border bg-white shadow-lg z-50">
-                    <button onClick={() => exportToCSV(transactions.map(t=>({ id: t.id, customer: t.customer.name, amount: (t.amount/100).toFixed(2), date: t.date, status: t.status })))} className="w-full text-left px-3 py-2 hover:bg-slate-50">CSV</button>
-                    <button onClick={() => exportToExcel(transactions.map(t=>({ id: t.id, customer: t.customer.name, amount: (t.amount/100).toFixed(2), date: t.date, status: t.status })))} className="w-full text-left px-3 py-2 hover:bg-slate-50">Excel</button>
-                    <button onClick={() => exportToPDF()} className="w-full text-left px-3 py-2 hover:bg-slate-50">PDF</button>
-                    <button onClick={() => handlePrint()} className="w-full text-left px-3 py-2 hover:bg-slate-50">Print</button>
+                  <div className="absolute right-0 mt-2 w-56 rounded-lg border bg-white shadow-xl z-50 overflow-hidden">
+                    <div className="bg-gradient-to-r from-brand-600 to-purple-600 text-white px-4 py-2 text-sm font-semibold">
+                      Export {filteredTransactions.length} Transaction{filteredTransactions.length !== 1 ? 's' : ''}
+                    </div>
+                    <button 
+                      onClick={handleExportCSV} 
+                      className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 border-b transition-colors"
+                    >
+                      <FileText size={16} className="text-green-600" />
+                      <div>
+                        <div className="font-medium text-sm">CSV</div>
+                        <div className="text-xs text-slate-500">Comma-separated values</div>
+                      </div>
+                    </button>
+                    <button 
+                      onClick={handleExportExcel} 
+                      className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 border-b transition-colors"
+                    >
+                      <FileSpreadsheet size={16} className="text-green-700" />
+                      <div>
+                        <div className="font-medium text-sm">Excel</div>
+                        <div className="text-xs text-slate-500">Multi-sheet workbook</div>
+                      </div>
+                    </button>
+                    <button 
+                      onClick={handleExportPDF} 
+                      className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 border-b transition-colors"
+                    >
+                      <FileText size={16} className="text-red-600" />
+                      <div>
+                        <div className="font-medium text-sm">PDF</div>
+                        <div className="text-xs text-slate-500">Professional report</div>
+                      </div>
+                    </button>
+                    <button 
+                      onClick={handlePrintAll} 
+                      className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                    >
+                      <Printer size={16} className="text-blue-600" />
+                      <div>
+                        <div className="font-medium text-sm">Print</div>
+                        <div className="text-xs text-slate-500">Print preview</div>
+                      </div>
+                    </button>
                   </div>
                 )}
               </div>
@@ -567,10 +743,58 @@ export default function POSPage() {
                       <td className="px-4 py-4 whitespace-nowrap"><span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${tx.status==='Completed' ? 'bg-green-100 text-green-800' : tx.status==='Pending' ? 'bg-yellow-100 text-yellow-800':'bg-red-100 text-red-800'}`}>{tx.status}</span></td>
                       <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => handleViewTransaction(tx)} title="View" className="rounded px-2 py-1 bg-slate-50 hover:bg-slate-100"><Eye size={16} /></button>
-                          <button onClick={() => { setSelectedTx(tx); setReceiptOpen(true); }} title="Print" className="rounded px-2 py-1 bg-slate-50 hover:bg-slate-100"><Printer size={16} /></button>
-                          <button onClick={() => exportToCSV([{ id: tx.id, staff: tx.staff, customer: tx.customer.name, amount: (tx.amount/100).toFixed(2), date: tx.date, status: tx.status }], `${tx.id}.csv`)} title="Download" className="rounded px-2 py-1 bg-slate-50 hover:bg-slate-100"><Download size={16} /></button>
-                          <button onClick={() => handleRefund(tx)} title="Refund" className="rounded px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100"><Trash2 size={16} /></button>
+                          <button 
+                            onClick={() => handleViewTransaction(tx)} 
+                            title="View Details" 
+                            className="rounded px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <div className="relative group">
+                            <button 
+                              title="Print Bill" 
+                              className="rounded px-2 py-1 bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
+                            >
+                              <Receipt size={16} />
+                            </button>
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[160px]">
+                              <button
+                                onClick={() => handlePrintInvoice(tx, true)}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-t-lg"
+                              >
+                                <FileCheck size={14} className="text-green-600" />
+                                <span>With Tax</span>
+                              </button>
+                              <button
+                                onClick={() => handlePrintInvoice(tx, false)}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-b-lg"
+                              >
+                                <FileText size={14} className="text-blue-600" />
+                                <span>Without Tax</span>
+                              </button>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              try {
+                                exportToCSV([tx], `${tx.id}.csv`);
+                                toast({ title: 'Downloaded', description: `${tx.id} exported to CSV` });
+                              } catch (error) {
+                                toast({ title: 'Export Failed', description: (error as Error).message, variant: 'destructive' });
+                              }
+                            }} 
+                            title="Download CSV" 
+                            className="rounded px-2 py-1 bg-green-50 text-green-600 hover:bg-green-100 transition-colors"
+                          >
+                            <Download size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleRefund(tx)} 
+                            title="Process Refund" 
+                            className="rounded px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -718,33 +942,94 @@ export default function POSPage() {
             <DialogHeader>
               <DialogTitle>Receipt Preview</DialogTitle>
             </DialogHeader>
-            <div ref={printableRef as any} className="p-4">
-              <h3 className="font-semibold text-lg">Receipt</h3>
-              <div className="text-sm text-slate-600">{new Date().toLocaleString()}</div>
-              <div className="mt-3">
-                {cartItems.length === 0 ? (
-                  <div>No items (sale already recorded)</div>
-                ) : (
-                  <div className="space-y-2">
-                    {cartItems.map(it => (
-                      <div key={it.product.id} className="flex justify-between">
-                        <div>{it.product.name} × {it.qty}</div>
-                        <div>{format(it.product.price * it.qty)}</div>
+            <div className="p-4">
+              <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-lg p-6">
+                <div className="text-center border-b pb-4 mb-4">
+                  <h3 className="font-bold text-2xl text-slate-900">🧾 RECEIPT</h3>
+                  <p className="text-sm text-slate-600 mt-2">{new Date().toLocaleString()}</p>
+                  {selectedTx && <p className="text-xs font-mono text-slate-500 mt-1">{selectedTx.id}</p>}
+                </div>
+                
+                {selectedTx ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="font-semibold text-slate-700">Customer:</p>
+                        <p className="text-slate-900">{selectedTx.customer.name}</p>
+                        {selectedTx.customer.email && <p className="text-xs text-slate-500">{selectedTx.customer.email}</p>}
                       </div>
-                    ))}
-                    <div className="mt-2 border-t pt-2">
-                      <div className="flex justify-between"><div>Subtotal</div><div>{format(subtotal)}</div></div>
-                      <div className="flex justify-between"><div>Discount ({discountPercent}%)</div><div>{format(computeTotalWithTaxAndDiscount(subtotal).discount)}</div></div>
-                      <div className="flex justify-between"><div>Tax ({taxPercent}%)</div><div>{format(computeTotalWithTaxAndDiscount(subtotal).taxed - (subtotal - computeTotalWithTaxAndDiscount(subtotal).discount))}</div></div>
-                      <div className="flex justify-between font-semibold"><div>Total</div><div>{format(computeTotalWithTaxAndDiscount(subtotal).total)}</div></div>
+                      <div>
+                        <p className="font-semibold text-slate-700">Staff:</p>
+                        <p className="text-slate-900">{selectedTx.staff || 'N/A'}</p>
+                        {selectedTx.serviceAttendee && (
+                          <p className="text-xs text-slate-500">Attendee: {selectedTx.serviceAttendee}</p>
+                        )}
+                      </div>
                     </div>
+
+                    <div className="border-t border-b py-3">
+                      <p className="font-semibold text-sm mb-2">Items:</p>
+                      {selectedTx.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between text-sm py-1">
+                          <span>{item.name || item.productId} × {item.qty}</span>
+                          <span className="font-medium">{format(item.price * item.qty)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Order Value:</span>
+                        <span>{format(selectedTx.orderValue || selectedTx.amount)}</span>
+                      </div>
+                      {(selectedTx.amount - (selectedTx.orderValue || selectedTx.amount)) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">Tax/Fees:</span>
+                          <span>{format(selectedTx.amount - (selectedTx.orderValue || selectedTx.amount))}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-lg font-bold pt-2 border-t">
+                        <span>TOTAL:</span>
+                        <span className="text-brand-600">{format(selectedTx.amount)}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-center text-slate-500 pt-4 border-t">
+                      <p>Payment Method: <strong>{selectedTx.paymentMethod || 'N/A'}</strong></p>
+                      <p className="mt-2">Thank you for your business! ⭐⭐⭐⭐⭐</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center text-slate-500 py-8">
+                    <p>No transaction selected</p>
                   </div>
                 )}
               </div>
-              <div className="mt-4 flex gap-2">
-                <Button onClick={() => exportToPDF()} className="flex items-center gap-2"><Printer size={14} /> PDF</Button>
-                <Button onClick={() => handlePrint()} className="flex items-center gap-2">Print</Button>
-              </div>
+              
+              {selectedTx && (
+                <div className="mt-4 flex gap-2">
+                  <Button 
+                    onClick={() => handlePrintSingle(selectedTx)} 
+                    className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Printer size={16} /> Print Receipt
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      try {
+                        exportToPDF([selectedTx], `receipt-${selectedTx.id}.pdf`);
+                        toast({ title: 'PDF Downloaded', description: 'Receipt saved as PDF' });
+                      } catch (error) {
+                        toast({ title: 'Export Failed', description: (error as Error).message, variant: 'destructive' });
+                      }
+                    }} 
+                    variant="outline"
+                    className="flex-1 flex items-center justify-center gap-2"
+                  >
+                    <FileText size={16} /> Save as PDF
+                  </Button>
+                </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>

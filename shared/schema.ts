@@ -7,6 +7,17 @@ export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  name: text("name"),
+  email: text("email"),
+  phone: text("phone"),
+  timezone: text("timezone").default("America/New_York"),
+  avatar: text("avatar"),
+  emailVerified: text("email_verified").default("false"),
+  twoFactorEnabled: text("two_factor_enabled").default("false"),
+  twoFactorSecret: text("two_factor_secret"),
+  notificationPreferences: jsonb("notification_preferences").default(sql`'{"email": true, "sms": true, "push": false}'`),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const onboarding = pgTable("onboarding", {
@@ -48,6 +59,16 @@ export const resourceBookings = pgTable("resource_bookings", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const userSessions = pgTable("user_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  deviceInfo: text("device_info"),
+  ipAddress: text("ip_address"),
+  location: text("location"),
+  lastActive: text("last_active").notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -68,6 +89,21 @@ export const insertResourceBookingSchema = createInsertSchema(resourceBookings).
   createdAt: true,
 });
 
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({
+  id: true,
+  createdAt: true,
+  lastActive: true,
+});
+
+export const updateUserProfileSchema = createInsertSchema(users).pick({
+  name: true,
+  email: true,
+  phone: true,
+  timezone: true,
+  avatar: true,
+  notificationPreferences: true,
+}).partial();
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertOnboarding = z.infer<typeof insertOnboardingSchema>;
@@ -76,3 +112,6 @@ export type InsertResource = z.infer<typeof insertResourceSchema>;
 export type Resource = typeof resources.$inferSelect;
 export type InsertResourceBooking = z.infer<typeof insertResourceBookingSchema>;
 export type ResourceBooking = typeof resourceBookings.$inferSelect;
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+export type UserSession = typeof userSessions.$inferSelect;
+export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;

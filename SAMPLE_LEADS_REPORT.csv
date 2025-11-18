@@ -1,0 +1,68 @@
+"═══════════════════════════════════════════════════════════════"
+"                  LEADS COMPREHENSIVE REPORT"
+"═══════════════════════════════════════════════════════════════"
+"Generated: 14 Nov 2025, 20:50"
+"Filter Applied: All Sources"
+
+"━━━ KEY METRICS SUMMARY ━━━"
+"Total Leads",8
+"Total Appointments",24
+"Completed Appointments",18
+"Overall Conversion Rate","75.0%"
+
+"━━━ LEADS BY SOURCE ━━━"
+"Source","Count"
+"LinkedIn",3
+"Website",2
+"Referral",2
+"Email Campaign",1
+
+"━━━ TOP 10 MOST ACTIVE LEADS ━━━"
+"Rank","Name","Company","Total Appointments","Completed","Source"
+"#1","John Smith","Tech Corp",5,4,"LinkedIn"
+"#2","Sarah Johnson","Innovate Solutions",4,3,"Website"
+"#3","Mike Brown","Digital Agency",3,3,"Referral"
+"#4","Emily Davis","Growth Ventures",3,2,"LinkedIn"
+"#5","David Wilson","Future Tech",2,2,"Email Campaign"
+"#6","Lisa Anderson","Smart Systems",2,1,"Website"
+"#7","Robert Taylor","Enterprise Co",2,1,"LinkedIn"
+"#8","Jennifer Martinez","Startup Inc",3,2,"Referral"
+
+"═══════════════════════════════════════════════════════════════"
+"                    DETAILED LEADS DATA"
+"═══════════════════════════════════════════════════════════════"
+
+"Lead ID","Name","Email","Phone","Company","Role","Source","Status","Assigned To","Total Appointments","Completed","Pending","Conversion Rate (%)","Created Date","Last Contact","Days Since Created","Notes","Tags"
+"1","John Smith","john.smith@example.com","+1 (555) 123-4567","Tech Corp","CEO","LinkedIn","Active","Arjun Patel","5","4","1","80.0","01 Nov 2025","10 Nov 2025","13","Interested in our enterprise package. Follow up next week.​",""
+"2","Sarah Johnson","sarah.j@innovate.com","+1 (555) 234-5678","Innovate Solutions","CTO","Website","Active","Priya Sharma","4","3","1","75.0","28 Oct 2025","08 Nov 2025","17","Looking for cloud solutions. Budget approved for Q1 2026.",""
+"3","Mike Brown","mike@digitalagency.net","+1 (555) 345-6789","Digital Agency","Director","Referral","Active","Vikram Singh","3","3","0","100.0","05 Nov 2025","12 Nov 2025","9","Very satisfied with demo. Ready to proceed with contract.",""
+"4","Emily Davis","emily.davis@growth.io","+1 (555) 456-7890","Growth Ventures","Marketing Head","LinkedIn","Active","Sneha Kapoor","3","2","1","66.7","02 Nov 2025","09 Nov 2025","12","Requested product comparison with competitors. Send proposal.",""
+"5","David Wilson","d.wilson@futuretech.com","+1 (555) 567-8901","Future Tech","VP Sales","Email Campaign","Active","Amit Gupta","2","2","0","100.0","10 Nov 2025","13 Nov 2025","4","Warm lead from email campaign. Quick decision maker.",""
+"6","Lisa Anderson","lisa@smartsystems.in","+91 98765 43210","Smart Systems","Founder","Website","Active","Arjun Patel","2","1","1","50.0","07 Nov 2025","11 Nov 2025","7","Interested but budget constraints. Follow up in December.",""
+"7","Robert Taylor","robert.t@enterprise.com","+1 (555) 789-0123","Enterprise Co","COO","LinkedIn","Active","Priya Sharma","2","1","1","50.0","03 Nov 2025","06 Nov 2025","11","Large potential deal. Needs approval from board of directors.",""
+"8","Jennifer Martinez","jen@startup.io","+1 (555) 890-1234","Startup Inc","CEO","Referral","Active","Vikram Singh","3","2","1","66.7","09 Nov 2025","13 Nov 2025","5","Referred by existing client. Very enthusiastic about product.",""
+
+"═══════════════════════════════════════════════════════════════"
+"                      SUMMARY"
+"═══════════════════════════════════════════════════════════════"
+"Metric","Value"
+"Total Leads Exported",8
+"Total Appointments",24
+"Completed Appointments",18
+"Conversion Rate","75.0%"
+
+"═══════════════════════════════════════════════════════════════"
+"                  COLUMN REFERENCE GUIDE"
+"═══════════════════════════════════════════════════════════════"
+"Column Name","Description"
+"Lead ID","Unique internal identifier"
+"Conversion Rate (%)","Percentage of completed vs total appointments"
+"Days Since Created","Number of days since lead was added"
+"Pending","Appointments scheduled but not yet completed"
+
+"Important Notes:"
+"• Use Excel or Google Sheets for best viewing experience"
+"• Enable filters on header row for easy data analysis"
+"• Create pivot tables using Source or Status columns"
+"• Report generated on: 14 Nov 2025, 20:50:45"
+"═══════════════════════════════════════════════════════════════"

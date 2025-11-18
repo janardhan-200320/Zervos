@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Plus, Minus, Search, Filter, CalendarX, DollarSign, CreditCard, Smartphone, Banknote, Edit2, Trash2, Clock, CheckCircle2, XCircle, MoreVertical, Pause, RefreshCw, Eye, Mail, Phone, User, MapPin } from 'lucide-react';
+import { Calendar, Plus, Minus, Search, Filter, CalendarX, DollarSign, CreditCard, Smartphone, Banknote, Edit2, Trash2, Clock, CheckCircle2, XCircle, MoreVertical, Pause, RefreshCw, Eye, Mail, Phone, User, MapPin, MessageSquare, QrCode, Copy } from 'lucide-react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -616,6 +616,34 @@ export default function AppointmentsNew() {
                       >
                         <RefreshCw className="mr-2 h-4 w-4 text-purple-600" />
                         <span>Reschedule</span>
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      
+                      <DropdownMenuItem 
+                        onClick={() => {
+                          const feedbackUrl = `${window.location.origin}/feedback?appointmentId=${appointment.id}&service=${encodeURIComponent(appointment.serviceName || appointment.customService || '')}&attendee=${encodeURIComponent(appointment.assignedStaff || '')}&customer=${encodeURIComponent(appointment.customerName)}`;
+                          navigator.clipboard.writeText(feedbackUrl);
+                          toast({
+                            title: 'Feedback Link Copied!',
+                            description: 'Share this link with the customer to collect feedback',
+                          });
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <Copy className="mr-2 h-4 w-4 text-indigo-600" />
+                        <span>Copy Feedback Link</span>
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuItem 
+                        onClick={() => {
+                          const feedbackUrl = `${window.location.origin}/feedback?appointmentId=${appointment.id}&service=${encodeURIComponent(appointment.serviceName || appointment.customService || '')}&attendee=${encodeURIComponent(appointment.assignedStaff || '')}&customer=${encodeURIComponent(appointment.customerName)}`;
+                          window.open(feedbackUrl, '_blank');
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <MessageSquare className="mr-2 h-4 w-4 text-green-600" />
+                        <span>Open Feedback Form</span>
                       </DropdownMenuItem>
                       
                       <DropdownMenuSeparator />

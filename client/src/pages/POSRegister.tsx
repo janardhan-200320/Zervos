@@ -27,6 +27,12 @@ type Service = {
 type CartItem = {
   service: Service;
   quantity: number;
+  assignedPerson?: string;
+};
+
+type CartData = {
+  quantity: number;
+  assignedPerson: string;
 };
 
 // Initial services for different categories
@@ -81,7 +87,7 @@ const CATEGORY_COLORS = {
 export default function POSRegister() {
   const [, setLocation] = useLocation();
   const [services, setServices] = useState<Service[]>(INITIAL_SERVICES);
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useState<Record<string, CartData>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showCustomService, setShowCustomService] = useState(false);
@@ -92,8 +98,13 @@ export default function POSRegister() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [staffName, setStaffName] = useState('');
+  const [serviceAttendee, setServiceAttendee] = useState('');
+  const [salesAgent, setSalesAgent] = useState('');
   const { toast} = useToast();
   const [viewMode, setViewMode] = useState<'services' | 'products'>('services');
+  const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
+  const [discountValue, setDiscountValue] = useState('');
+  const [discountAmount, setDiscountAmount] = useState(0);
 
   // Custom service form
   const [customService, setCustomService] = useState({
@@ -221,24 +232,54 @@ export default function POSRegister() {
 
   const cartItems = useMemo(() => {
     return Object.entries(cart)
-      .map(([id, quantity]) => ({
+      .map(([id, cartItem]) => ({
         service: services.find(s => s.id === id)!,
-        quantity,
+        quantity: cartItem.quantity,
+        assignedPerson: cartItem.assignedPerson,
       }))
       .filter(item => item.service);
   }, [cart, services]);
 
   const subtotal = cartItems.reduce((sum, item) => sum + (item.service.price * item.quantity), 0);
-  const tax = Math.round(subtotal * 0.18); // 18% tax
-  const total = subtotal + tax;
+  
+  // Calculate discount
+  useEffect(() => {
+    if (!discountValue || parseFloat(discountValue) <= 0) {
+      setDiscountAmount(0);
+      return;
+    }
+
+    const value = parseFloat(discountValue);
+    
+    if (discountType === 'percentage') {
+      const maxPercentage = 100;
+      const validPercentage = Math.min(value, maxPercentage);
+      setDiscountAmount(Math.round((subtotal * validPercentage) / 100));
+    } else {
+      // Fixed discount should not exceed subtotal
+      const maxDiscount = subtotal;
+      const validDiscount = Math.min(value * 100, maxDiscount); // Convert to cents
+      setDiscountAmount(Math.round(validDiscount));
+    }
+  }, [discountValue, discountType, subtotal]);
+
+  const subtotalAfterDiscount = subtotal - discountAmount;
+  const tax = Math.round(subtotalAfterDiscount * 0.18); // 18% tax on discounted amount
+  const total = subtotalAfterDiscount + tax;
 
   const formatPrice = (cents: number) => `₹${(cents / 100).toFixed(2)}`;
 
   const addToCart = (serviceId: string) => {
-    setCart(prev => ({
-      ...prev,
-      [serviceId]: (prev[serviceId] || 0) + 1,
-    }));
+    setCart(prev => {
+      const newCart: Record<string, CartData> = {
+        ...prev,
+        [serviceId]: {
+          quantity: (prev[serviceId]?.quantity || 0) + 1,
+          assignedPerson: prev[serviceId]?.assignedPerson || '',
+        },
+      };
+      return newCart;
+    });
     toast({
       title: 'Added to cart',
       description: 'Service added successfully',
@@ -247,12 +288,19 @@ export default function POSRegister() {
 
   const updateQuantity = (serviceId: string, delta: number) => {
     setCart(prev => {
-      const newQty = (prev[serviceId] || 0) + delta;
+      const newQty = (prev[serviceId]?.quantity || 0) + delta;
       if (newQty <= 0) {
         const { [serviceId]: _, ...rest } = prev;
         return rest;
       }
-      return { ...prev, [serviceId]: newQty };
+      const newCart: Record<string, CartData> = { 
+        ...prev, 
+        [serviceId]: {
+          quantity: newQty,
+          assignedPerson: prev[serviceId]?.assignedPerson || '',
+        }
+      };
+      return newCart;
     });
   };
 
@@ -260,6 +308,19 @@ export default function POSRegister() {
     setCart(prev => {
       const { [serviceId]: _, ...rest } = prev;
       return rest;
+    });
+  };
+
+  const updateAssignedPerson = (serviceId: string, person: string) => {
+    setCart(prev => {
+      const newCart: Record<string, CartData> = {
+        ...prev,
+        [serviceId]: {
+          ...prev[serviceId],
+          assignedPerson: person,
+        },
+      };
+      return newCart;
     });
   };
 
@@ -339,6 +400,22 @@ export default function POSRegister() {
       return;
     }
 
+    // Validate service attendee for service items
+    const hasServices = cartItems.some(item => 
+      item.service.id.startsWith('service-') || 
+      item.service.id.startsWith('custom-service-') ||
+      (!item.service.id.startsWith('product-') && !item.service.id.startsWith('custom-product-'))
+    );
+    
+    if (hasServices && !serviceAttendee.trim()) {
+      toast({
+        title: 'Service attendee required',
+        description: 'Please enter who is performing the service',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Create transaction object
     const transaction = {
       id: `POS-${Date.now()}`,
@@ -351,12 +428,14 @@ export default function POSRegister() {
         productId: item.service.id,
         qty: item.quantity,
         price: item.service.price,
-        name: item.service.name
+        name: item.service.name,
+        assignedPerson: item.assignedPerson || staffName.trim()
       })),
       date: new Date().toISOString().split('T')[0],
       amount: total,
       status: 'Completed' as const,
       staff: staffName.trim(),
+      serviceAttendee: serviceAttendee.trim() || undefined,
       openBalance: 0,
       totalReturn: 0,
       balanceAmount: total,
@@ -386,6 +465,8 @@ export default function POSRegister() {
     setCustomerEmail('');
     setCustomerPhone('');
     setStaffName('');
+    setServiceAttendee('');
+    setSalesAgent('');
     setPaymentMethod('cash');
   };
 
@@ -662,12 +743,13 @@ export default function POSRegister() {
 
           {/* Cart Section */}
           <div className="lg:col-span-1">
-            <motion.div 
-              className="sticky top-24 bg-white rounded-xl shadow-lg border p-6 space-y-4"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
-            >
+            <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
+              <motion.div 
+                className="bg-white rounded-xl shadow-lg border p-6 space-y-4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+              >
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                   <ShoppingCart className="h-5 w-5 text-brand-600" />
@@ -685,18 +767,39 @@ export default function POSRegister() {
                 )}
               </div>
 
-              {/* Staff Name Field */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <Label htmlFor="staff-name" className="text-sm font-medium text-blue-900 mb-1 block">
-                  Staff Handling Bill
-                </Label>
-                <Input
-                  id="staff-name"
-                  placeholder="Enter staff name"
-                  value={staffName}
-                  onChange={(e) => setStaffName(e.target.value)}
-                  className="bg-white border-blue-300 focus:border-blue-500 focus:ring-blue-200"
-                />
+              {/* Staff Information Section */}
+              <div className="space-y-3">
+                {/* Staff Handling Bill */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <Label htmlFor="staff-name" className="text-sm font-medium text-blue-900 mb-1 block">
+                    Staff Handling Bill
+                  </Label>
+                  <Input
+                    id="staff-name"
+                    placeholder="Enter staff name"
+                    value={staffName}
+                    onChange={(e) => setStaffName(e.target.value)}
+                    className="bg-white border-blue-300 focus:border-blue-500 focus:ring-blue-200"
+                  />
+                </div>
+
+                {/* Service Attendee */}
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                  <Label htmlFor="service-attendee" className="text-sm font-medium text-purple-900 mb-1 block">
+                    Service Attendee (Who is performing the service?)
+                  </Label>
+                  <Input
+                    id="service-attendee"
+                    placeholder="Enter attendee name"
+                    value={serviceAttendee}
+                    onChange={(e) => setServiceAttendee(e.target.value)}
+                    className="bg-white border-purple-300 focus:border-purple-500 focus:ring-purple-200"
+                  />
+                  <p className="text-xs text-purple-600 mt-1">
+                    Required for service bookings
+                  </p>
+                </div>
+
               </div>
 
               <div className="border-t pt-4">
@@ -716,45 +819,64 @@ export default function POSRegister() {
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: 20 }}
-                          className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg"
+                          className="bg-slate-50 rounded-lg overflow-hidden"
                         >
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm text-slate-900 truncate">
-                              {item.service.name}
-                            </p>
-                            <p className="text-xs text-slate-600">
-                              {formatPrice(item.service.price)} × {item.quantity}
-                            </p>
-                          </div>
+                          <div className="flex items-center gap-3 p-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm text-slate-900 truncate">
+                                {item.service.name}
+                              </p>
+                              <p className="text-xs text-slate-600">
+                                {formatPrice(item.service.price)} × {item.quantity}
+                              </p>
+                            </div>
 
-                          <div className="flex items-center gap-2">
-                            <Button
-                              onClick={() => updateQuantity(item.service.id, -1)}
-                              variant="outline"
-                              size="sm"
-                              className="h-7 w-7 p-0"
-                            >
-                              <Minus className="h-3 w-3" />
-                            </Button>
-                            <span className="text-sm font-semibold w-6 text-center">
-                              {item.quantity}
-                            </span>
-                            <Button
-                              onClick={() => updateQuantity(item.service.id, 1)}
-                              variant="outline"
-                              size="sm"
-                              className="h-7 w-7 p-0"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              onClick={() => removeFromCart(item.service.id)}
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                onClick={() => updateQuantity(item.service.id, -1)}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="text-sm font-semibold w-6 text-center">
+                                {item.quantity}
+                              </span>
+                              <Button
+                                onClick={() => updateQuantity(item.service.id, 1)}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                onClick={() => removeFromCart(item.service.id)}
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          {/* Assigned Person Field */}
+                          <div className="px-3 pb-3 pt-0">
+                            <div className="flex items-center gap-2">
+                              <User className="h-3 w-3 text-slate-500" />
+                              <Input
+                                placeholder={
+                                  item.service.id.startsWith('product-') || item.service.id.startsWith('custom-product-')
+                                    ? 'Who sold this?'
+                                    : 'Who performed this?'
+                                }
+                                value={item.assignedPerson || ''}
+                                onChange={(e) => updateAssignedPerson(item.service.id, e.target.value)}
+                                className="h-8 text-xs bg-white border-slate-300 focus:border-brand-500"
+                              />
+                            </div>
                           </div>
                         </motion.div>
                       ))}
@@ -769,15 +891,103 @@ export default function POSRegister() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                 >
+                  {/* Discount Section */}
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <Label className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" />
+                        Apply Discount
+                      </Label>
+                      {discountAmount > 0 && (
+                        <Badge variant="secondary" className="bg-amber-600 text-white">
+                          -{formatPrice(discountAmount)}
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Select value={discountType} onValueChange={(value: 'percentage' | 'fixed') => {
+                        setDiscountType(value);
+                        setDiscountValue('');
+                        setDiscountAmount(0);
+                      }}>
+                        <SelectTrigger className="w-[130px] bg-white border-amber-300">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="percentage">Percentage %</SelectItem>
+                          <SelectItem value="fixed">Fixed ₹</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      <div className="flex-1 relative">
+                        <Input
+                          type="number"
+                          placeholder={discountType === 'percentage' ? '0-100' : '0.00'}
+                          value={discountValue}
+                          onChange={(e) => setDiscountValue(e.target.value)}
+                          className="bg-white border-amber-300 focus:border-amber-500 focus:ring-amber-200"
+                          min="0"
+                          max={discountType === 'percentage' ? '100' : undefined}
+                          step={discountType === 'percentage' ? '1' : '0.01'}
+                        />
+                        {discountValue && parseFloat(discountValue) > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setDiscountValue('');
+                              setDiscountAmount(0);
+                            }}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {discountAmount > 0 && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-xs text-amber-700 bg-amber-100 rounded px-2 py-1"
+                      >
+                        {discountType === 'percentage' 
+                          ? `${discountValue}% discount applied` 
+                          : `₹${discountValue} discount applied`}
+                      </motion.div>
+                    )}
+                  </div>
+
+                  {/* Pricing Summary */}
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between text-slate-600">
                       <span>Sub Total</span>
-                      <span>(Item discount included: ₹0)</span>
+                      <span className="font-medium">{formatPrice(subtotal)}</span>
                     </div>
-                    <div className="flex justify-between text-slate-900 font-semibold">
-                      <span></span>
-                      <span>{formatPrice(subtotal)}</span>
-                    </div>
+                    
+                    {discountAmount > 0 && (
+                      <motion.div 
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="flex justify-between text-amber-600 font-medium"
+                      >
+                        <span className="flex items-center gap-1">
+                          <DollarSign className="h-3 w-3" />
+                          Discount {discountType === 'percentage' && `(${discountValue}%)`}
+                        </span>
+                        <span>-{formatPrice(discountAmount)}</span>
+                      </motion.div>
+                    )}
+                    
+                    {discountAmount > 0 && (
+                      <div className="flex justify-between text-slate-700 font-semibold pt-1 border-t border-dashed">
+                        <span>Subtotal after discount</span>
+                        <span>{formatPrice(subtotalAfterDiscount)}</span>
+                      </div>
+                    )}
+                    
                     <div className="flex justify-between text-slate-600">
                       <span>Tax (18%)</span>
                       <span>{formatPrice(tax)}</span>
@@ -788,11 +998,18 @@ export default function POSRegister() {
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-center pt-3 border-t">
+                  <div className="flex justify-between items-center pt-3 border-t-2 border-slate-200">
                     <span className="text-lg font-bold text-slate-900">Total</span>
                     <div className="text-right">
-                      <p className="text-sm text-slate-500">(Items: {cartItems.length}, Quantity: {cartItems.reduce((s, i) => s + i.quantity, 0)})</p>
+                      <p className="text-xs text-slate-500 mb-1">
+                        (Items: {cartItems.length}, Qty: {cartItems.reduce((s, i) => s + i.quantity, 0)})
+                      </p>
                       <p className="text-2xl font-bold text-brand-600">{formatPrice(total)}</p>
+                      {discountAmount > 0 && (
+                        <p className="text-xs text-amber-600 line-through">
+                          was {formatPrice(subtotal + Math.round(subtotal * 0.18))}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -807,7 +1024,8 @@ export default function POSRegister() {
                   </motion.div>
                 </motion.div>
               )}
-            </motion.div>
+              </motion.div>
+            </div>
           </div>
         </div>
       </div>

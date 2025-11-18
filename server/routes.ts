@@ -1,10 +1,195 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertOnboardingSchema, insertResourceSchema, insertResourceBookingSchema } from "@shared/schema";
+import { insertOnboardingSchema, insertResourceSchema, insertResourceBookingSchema, updateUserProfileSchema } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+// Configure multer for file uploads
+const uploadsDir = path.join(process.cwd(), 'uploads', 'avatars');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage_multer = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage_multer,
+  limits: {
+    fileSize: 2 * 1024 * 1024, // 2MB max
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only JPG, PNG, and GIF images are allowed!'));
+    }
+  }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // ========== USER PROFILE ROUTES ==========
+
+  // GET /api/user/profile - Get user profile (using mock user for now)
+  app.get("/api/user/profile", async (req, res) => {
+    try {
+      // For demo purposes, we'll use a mock user ID
+      // In production, get this from session/JWT token
+      const mockUserId = "demo-user-1";
+      
+      // Try to get from storage, create if doesn't exist
+      let user = await storage.getUser(mockUserId);
+      
+      if (!user) {
+        // Create a demo user if it doesn't exist
+        user = await storage.createUser({
+          username: "demo_user",
+          password: "hashed_password_here", // In production, this would be hashed
+        });
+      }
+
+      return res.json(user);
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      return res.status(500).json({ error: "Failed to fetch profile" });
+    }
+  });
+
+  // PUT /api/user/profile - Update user profile
+  app.put("/api/user/profile", async (req, res) => {
+    try {
+      const result = updateUserProfileSchema.safeParse(req.body);
+      
+      if (!result.success) {
+        const validationError = fromZodError(result.error);
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validationError.message 
+        });
+      }
+
+      const mockUserId = "demo-user-1";
+      const updated = await storage.updateUserProfile(mockUserId, result.data);
+
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.json(updated);
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      return res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
+  // POST /api/user/avatar - Upload profile picture
+  app.post("/api/user/avatar", upload.single('avatar'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const mockUserId = "demo-user-1";
+      const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+
+      const updated = await storage.updateUserProfile(mockUserId, {
+        avatar: avatarUrl,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.json({
+        success: true,
+        avatarUrl: avatarUrl,
+        user: updated,
+      });
+    } catch (error) {
+      console.error("Error uploading avatar:", error);
+      return res.status(500).json({ error: "Failed to upload avatar" });
+    }
+  });
+
+  // PUT /api/user/password - Change password
+  app.put("/api/user/password", async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current and new passwords are required" });
+      }
+
+      if (newPassword.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters long" });
+      }
+
+      const mockUserId = "demo-user-1";
+      
+      // In production, verify current password against hashed password
+      // For demo, we'll just update
+      const success = await storage.updateUserPassword(mockUserId, newPassword);
+
+      if (!success) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      return res.json({ success: true, message: "Password updated successfully" });
+    } catch (error) {
+      console.error("Error updating password:", error);
+      return res.status(500).json({ error: "Failed to update password" });
+    }
+  });
+
+  // GET /api/user/sessions - Get user sessions
+  app.get("/api/user/sessions", async (req, res) => {
+    try {
+      const mockUserId = "demo-user-1";
+      const sessions = await storage.getUserSessions(mockUserId);
+      return res.json(sessions);
+    } catch (error) {
+      console.error("Error fetching user sessions:", error);
+      return res.status(500).json({ error: "Failed to fetch sessions" });
+    }
+  });
+
+  // DELETE /api/user/sessions/:id - Revoke a session
+  app.delete("/api/user/sessions/:id", async (req, res) => {
+    try {
+      await storage.deleteUserSession(req.params.id);
+      return res.json({ success: true, message: "Session revoked successfully" });
+    } catch (error) {
+      console.error("Error revoking session:", error);
+      return res.status(500).json({ error: "Failed to revoke session" });
+    }
+  });
+
+  // DELETE /api/user/account - Delete user account
+  app.delete("/api/user/account", async (req, res) => {
+    try {
+      const mockUserId = "demo-user-1";
+      await storage.deleteUser(mockUserId);
+      return res.json({ success: true, message: "Account deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      return res.status(500).json({ error: "Failed to delete account" });
+    }
+  });
+
   // POST /api/onboarding - Create new onboarding
   app.post("/api/onboarding", async (req, res) => {
     try {

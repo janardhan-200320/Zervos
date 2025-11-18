@@ -62,80 +62,366 @@ const HelpSupport = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const faqs: FAQItem[] = [
+    // Online Booking & Appointments
     {
       id: '1',
       question: 'How do I create a new booking page?',
-      answer: 'Navigate to "Booking Pages" from the sidebar, click "Create New Page", fill in your service details, customize the appearance, and publish. Your customers will be able to book appointments through this page.',
-      category: 'Getting Started',
+      answer: 'Navigate to "Booking Pages" from the sidebar, click "Create New Page", fill in your service details (name, duration, price), customize the appearance, and publish. Your customers will receive a unique URL (e.g., zervos.com/your-business/service-name) to book appointments 24/7. You can customize colors, add your logo, set availability, and even embed the booking widget on your website.',
+      category: 'Online Bookings',
     },
     {
       id: '2',
-      question: 'How do I manage time slots?',
-      answer: 'Click the clock icon next to notifications to access Time Slot Management. Here you can add, edit, delete, and activate/deactivate time slots. Changes will automatically reflect on your booking pages.',
-      category: 'Time Management',
+      question: 'Can customers book appointments online without calling me?',
+      answer: 'Yes! That\'s the core feature of Zervos. Once you create a booking page, customers can browse available time slots, select their preferred date/time, fill in their details, and pay online (if enabled). You receive instant notifications via email, SMS, and in-app. No phone calls needed - it\'s all automated!',
+      category: 'Online Bookings',
     },
     {
       id: '3',
-      question: 'Can I customize the labels for my services?',
-      answer: 'Yes! During onboarding or in settings, you can customize how you refer to Event Types (Sessions, Appointments, etc.) and Team Members (Staff, Therapists, etc.) to match your business terminology.',
-      category: 'Customization',
+      question: 'How do online session bookings work?',
+      answer: 'Online bookings work in 5 steps: 1) Customer visits your booking page, 2) Selects service and available time slot, 3) Fills in name, email, phone, 4) Makes payment (optional), 5) Receives instant confirmation. You get notified immediately and the appointment appears in your dashboard. Customers can also reschedule or cancel based on your policies.',
+      category: 'Online Bookings',
     },
     {
       id: '4',
-      question: 'How do I add team members?',
-      answer: 'Go to Team Members section, click "Add New Member", enter their details including name, email, role, and availability schedule. They will receive login credentials to access their dashboard.',
-      category: 'Team Management',
+      question: 'What information do customers need to provide for online bookings?',
+      answer: 'Standard fields include: Full Name, Email Address, Phone Number, and any custom fields you add (e.g., "Special Requests", "Allergies", "Preferred Staff Member"). You can make fields required or optional. All data is encrypted and stored securely. Customers also receive booking confirmations and reminders automatically.',
+      category: 'Online Bookings',
     },
     {
       id: '5',
-      question: 'What payment methods are supported?',
-      answer: 'We support multiple payment gateways including Razorpay, Stripe, PayPal, and manual payments. You can configure your preferred payment method in the Admin Center under Payment Settings.',
-      category: 'Payments',
+      question: 'Can I accept online payments for bookings?',
+      answer: 'Absolutely! Integrate Razorpay, Stripe, or PayPal in Admin Center > Payment Settings. You can charge full payment upfront, partial deposits, or allow pay-later. All transactions are secure with PCI-DSS compliance. Customers can pay via credit/debit cards, UPI, wallets, or net banking. You receive payment confirmations instantly.',
+      category: 'Online Bookings',
     },
     {
       id: '6',
-      question: 'How do I track appointments?',
-      answer: 'All appointments are visible in the Appointments section. You can filter by status (pending, confirmed, completed, cancelled), date range, and team member. Use the calendar view for a visual overview.',
-      category: 'Appointments',
+      question: 'Do I get notified when someone books online?',
+      answer: 'Yes! You receive real-time notifications via: 1) In-app notifications (bell icon), 2) Email alerts, 3) SMS (if enabled), 4) WhatsApp notifications (optional). The notification includes customer details, service booked, date/time, and payment status. You can customize notification preferences in Settings.',
+      category: 'Online Bookings',
     },
     {
       id: '7',
-      question: 'Can customers reschedule appointments?',
-      answer: 'Yes, if you enable this feature in booking page settings. Customers will receive a link in their confirmation email to reschedule or cancel their appointment based on your cancellation policy.',
+      question: 'Can customers see my real-time availability online?',
+      answer: 'Yes! Your booking page shows only available time slots based on your calendar. It automatically blocks out: booked slots, breaks, holidays, and off-days. When you update your availability, it reflects immediately. This prevents double-bookings and gives customers accurate slot selection.',
+      category: 'Online Bookings',
+    },
+
+    // Time Slot Management
+    {
+      id: '8',
+      question: 'How do I manage time slots and availability?',
+      answer: 'Click the clock icon ⏰ next to notifications to access Time Slot Management. You can: Add new slots, Set recurring availability (e.g., Mon-Fri 9am-5pm), Add breaks/lunch hours, Block specific dates, Set slot duration (15min, 30min, 1hr, etc.), Assign slots to team members. Changes reflect instantly on booking pages.',
+      category: 'Time Management',
+    },
+    {
+      id: '9',
+      question: 'Can I set different availability for different services?',
+      answer: 'Yes! Each booking page (service) can have unique availability. For example: "Haircuts" available Mon-Sat 9am-6pm, "Spa Services" available Tue-Fri 10am-8pm. You can also assign different team members with their own schedules to different services.',
+      category: 'Time Management',
+    },
+    {
+      id: '10',
+      question: 'How do I handle breaks and lunch hours?',
+      answer: 'In Time Slot Management, add "Break Slots" or "Day Breaks". For example, set 12:30 PM - 1:30 PM as lunch break daily. These slots will be automatically blocked from customer bookings. You can set recurring breaks or one-time blocks for specific dates.',
+      category: 'Time Management',
+    },
+
+    // Appointment Management
+    {
+      id: '11',
+      question: 'How do I track all my appointments?',
+      answer: 'Go to "Appointments" in the sidebar. You see a list and calendar view of all bookings. Filter by: Status (Pending/Confirmed/Completed/Cancelled), Date range, Team member, Service type. Click any appointment to view full details, customer info, payment status, and add internal notes.',
       category: 'Appointments',
     },
     {
-      id: '8',
-      question: 'How do I send automated reminders?',
-      answer: 'Go to Workflows section and create automation rules. You can set up email/SMS reminders to be sent at specific intervals before appointments (24 hours, 1 hour, etc.).',
+      id: '12',
+      question: 'Can customers reschedule or cancel their online bookings?',
+      answer: 'Yes! In Booking Page Settings, enable "Allow Rescheduling" and "Allow Cancellation". Set policies like "Cancel up to 24 hours before appointment". Customers receive a unique link in their confirmation email to manage their booking. You get notified of any changes.',
+      category: 'Appointments',
+    },
+    {
+      id: '13',
+      question: 'What happens after a customer books online?',
+      answer: 'Automated workflow: 1) Customer receives instant confirmation email with appointment details, 2) You receive notification, 3) Appointment appears in your dashboard and calendar, 4) Customer gets automated reminders (24hr, 1hr before), 5) After appointment, customer receives thank-you email with feedback form (optional).',
+      category: 'Appointments',
+    },
+
+    // POS & Billing
+    {
+      id: '14',
+      question: 'How does the POS system work for walk-in customers?',
+      answer: 'Click "Open POS Register" button. Browse services/products, add to cart, enter customer details (optional), assign staff (Billing Staff, Service Attendee, Sales Agent), select payment method, and complete sale. Transaction is recorded with full details. You can export reports in CSV, Excel, or PDF format.',
+      category: 'POS & Billing',
+    },
+    {
+      id: '15',
+      question: 'Can I track who performed the service vs who handled billing?',
+      answer: 'Yes! The enhanced POS system has 3 staff fields: 1) Staff Handling Bill (who processed payment), 2) Service Attendee (who performed service), 3) Sales Agent (who made the sale). This helps track performance, commissions, and service quality. All data is included in export reports.',
+      category: 'POS & Billing',
+    },
+    {
+      id: '16',
+      question: 'How do I export POS transaction reports?',
+      answer: 'Click "Export" button in POS page. Choose format: CSV (for spreadsheets), Excel (multi-sheet with Summary, Transactions, Item Details, Staff Performance), PDF (professional report), or Print. All formats include complete transaction data with staff tracking, customer info, and payment details.',
+      category: 'POS & Billing',
+    },
+
+    // Payments & Invoicing
+    {
+      id: '17',
+      question: 'What payment methods are supported for online bookings?',
+      answer: 'We support: Razorpay (India: UPI, Cards, Wallets, Net Banking), Stripe (Global: Cards, Apple Pay, Google Pay), PayPal (Worldwide), Manual Payments (Cash/Bank Transfer). Configure in Admin Center > Payment Settings. You can enable multiple payment methods and let customers choose.',
+      category: 'Payments',
+    },
+    {
+      id: '18',
+      question: 'Can I send invoices for online bookings?',
+      answer: 'Yes! Go to Invoices section, create invoice, select customer and items/services, add taxes, apply discounts. You can send invoices via email, SMS, or WhatsApp. Customers receive a payment link. Track invoice status (Draft/Sent/Paid/Overdue). System sends auto-reminders for unpaid invoices.',
+      category: 'Payments',
+    },
+
+    // Team & Staff Management
+    {
+      id: '19',
+      question: 'How do I add team members for online bookings?',
+      answer: 'Go to Team Members section, click "Add New Member", enter: Name, Email, Role (Admin/Staff/Receptionist), Services they provide, Availability schedule. They receive login credentials. Customers can choose specific team members during online booking if you enable this feature.',
+      category: 'Team Management',
+    },
+    {
+      id: '20',
+      question: 'Can customers choose specific staff when booking online?',
+      answer: 'Yes! Enable "Staff Selection" in Booking Page Settings. Your booking page will show available staff with their photos (optional) and availability. Customers can pick their preferred team member. If staff is unavailable, only alternative options show.',
+      category: 'Team Management',
+    },
+
+    // Customization & Branding
+    {
+      id: '21',
+      question: 'Can I customize the online booking page with my branding?',
+      answer: 'Absolutely! In Booking Page Settings, customize: Logo, Brand colors, Header image, Welcome message, Terms & conditions, Thank you message. You can also add custom fields, set minimum booking notice (e.g., 2 hours ahead), buffer time between appointments, and embed widget on your website.',
+      category: 'Customization',
+    },
+    {
+      id: '22',
+      question: 'Can I change how services and staff are labeled?',
+      answer: 'Yes! In Settings or during onboarding, customize terminology: Event Types (Sessions/Appointments/Classes/Consultations), Team Members (Staff/Therapists/Coaches/Artists). This personalizes the system to match your industry (salon, spa, gym, clinic, etc.).',
+      category: 'Customization',
+    },
+
+    // Automation & Notifications
+    {
+      id: '23',
+      question: 'How do automated reminders work for online bookings?',
+      answer: 'Set up in Workflows section: Choose trigger (e.g., "24 hours before appointment"), Select action (Send Email/SMS), Customize message template. Common reminders: 24hr before, 1hr before, Thank you after service. Reduces no-shows by 60%! All reminders are sent automatically - you don\'t lift a finger.',
       category: 'Automation',
+    },
+    {
+      id: '24',
+      question: 'Do customers get confirmation after booking online?',
+      answer: 'Yes, instant confirmation! Customers receive: Confirmation email with appointment details and calendar invite (.ics file), SMS confirmation (if phone provided), Reminder emails (24hr & 1hr before), Reschedule/Cancel link, "Add to Calendar" button. You can customize all email templates in Settings.',
+      category: 'Automation',
+    },
+
+    // Reports & Analytics
+    {
+      id: '25',
+      question: 'Can I see reports of all online bookings?',
+      answer: 'Yes! Go to Reports section: View bookings by date range, service type, staff member, revenue generated, cancellation rates, popular time slots, customer retention. Export reports in CSV/Excel/PDF. Perfect for business insights, staff performance reviews, and financial planning.',
+      category: 'Reports',
+    },
+
+    // Troubleshooting
+    {
+      id: '26',
+      question: 'What if my online booking page is not showing available slots?',
+      answer: 'Check: 1) Time Slots are added and activated (clock icon), 2) Service is linked to availability, 3) You haven\'t blocked all dates, 4) Minimum booking notice isn\'t too restrictive, 5) Time zone is set correctly. Still stuck? Contact support via Live Chat - we\'ll help debug immediately!',
+      category: 'Troubleshooting',
+    },
+    {
+      id: '27',
+      question: 'How do I prevent double-bookings from online reservations?',
+      answer: 'Zervos automatically prevents double-bookings! When a customer selects a slot online, it\'s temporarily reserved (5 minutes). If they complete booking, slot is permanently blocked. If they abandon, slot opens again. Your calendar syncs in real-time across all booking pages.',
+      category: 'Troubleshooting',
     },
   ];
 
   const quickActions = [
     {
       icon: Book,
-      title: 'Documentation',
-      description: 'Comprehensive guides and tutorials',
-      action: () => window.open('https://docs.example.com', '_blank'),
+      title: 'Online Booking Setup',
+      description: 'Enable 24/7 online appointments',
+      color: 'from-blue-500 to-blue-600',
+      action: () => {
+        const tutorial = `
+📚 ONLINE BOOKING SETUP GUIDE
+
+✨ What You'll Learn:
+• Create your first booking page
+• Set availability & time slots
+• Accept online payments
+• Share booking link with customers
+
+📝 Step-by-Step Process:
+
+1️⃣ CREATE BOOKING PAGE
+   • Go to Sidebar > Booking Pages
+   • Click "Create New Page"
+   • Enter service name (e.g., "Haircut", "Massage")
+   • Set duration & price
+   • Add description
+
+2️⃣ SET AVAILABILITY
+   • Click clock icon ⏰ (top right)
+   • Add time slots (e.g., Mon-Fri 9am-5pm)
+   • Set slot duration (30min, 1hr, etc.)
+   • Add breaks if needed
+
+3️⃣ CONFIGURE PAYMENTS
+   • Admin Center > Payment Settings
+   • Connect Razorpay/Stripe/PayPal
+   • Set pricing: full payment or deposit
+   • Enable invoicing
+
+4️⃣ SHARE & GO LIVE
+   • Copy booking page link
+   • Share via email, social media, website
+   • Customers book 24/7 instantly!
+   • You get real-time notifications
+
+🎯 Your booking URL format:
+   zervos.com/your-business/service-name
+
+💡 Pro Tips:
+• Enable "Allow Rescheduling" for flexibility
+• Set minimum notice (e.g., 2 hours ahead)
+• Add custom fields for special requests
+• Use automated reminders to reduce no-shows
+
+Need help? Click "Live Chat" tab!`;
+        alert(tutorial);
+      },
     },
     {
       icon: Video,
       title: 'Video Tutorials',
-      description: 'Step-by-step video guides',
-      action: () => window.open('https://youtube.com/@yourcompany', '_blank'),
+      description: 'Watch setup demos & walkthroughs',
+      color: 'from-red-500 to-red-600',
+      action: () => {
+        const videoGuide = `
+🎥 VIDEO TUTORIAL LIBRARY
+
+📺 Available Videos:
+
+1. Getting Started (5 min)
+   • Platform overview
+   • Dashboard navigation
+   • First booking setup
+
+2. Online Bookings Deep Dive (12 min)
+   • Creating booking pages
+   • Customizing appearance
+   • Payment integration
+   • Customer experience walkthrough
+
+3. Time Slot Management (8 min)
+   • Adding availability
+   • Recurring schedules
+   • Managing breaks
+   • Holiday blocking
+
+4. POS System Tutorial (10 min)
+   • Walk-in customer handling
+   • Staff tracking
+   • Receipt printing
+   • Report exports
+
+5. Team Management (7 min)
+   • Adding staff members
+   • Setting individual schedules
+   • Performance tracking
+
+6. Automation & Workflows (9 min)
+   • Automated reminders
+   • Email templates
+   • SMS notifications
+
+7. Reports & Analytics (11 min)
+   • Export formats (CSV/Excel/PDF)
+   • Revenue analysis
+   • Staff performance
+
+📱 Access videos at:
+   zervos.com/tutorials
+
+🔗 Or search "Zervos Tutorial" on YouTube!`;
+        alert(videoGuide);
+      },
     },
     {
       icon: FileText,
-      title: 'Knowledge Base',
-      description: 'Articles and best practices',
+      title: 'FAQ & Knowledge Base',
+      description: '27 detailed guides about bookings',
+      color: 'from-purple-500 to-purple-600',
       action: () => setActiveTab('faq'),
     },
     {
       icon: Zap,
-      title: 'Quick Start Guide',
-      description: 'Get up and running in 5 minutes',
-      action: () => alert('Opening Quick Start Guide...'),
+      title: '5-Minute Quick Start',
+      description: 'Get online bookings live NOW',
+      color: 'from-emerald-500 to-emerald-600',
+      action: () => {
+        const quickStart = `
+⚡ 5-MINUTE QUICK START
+
+🎯 Goal: Accept your first online booking!
+
+⏱️ MINUTE 1: Create Booking Page
+   • Sidebar > Booking Pages
+   • Click "Create New"
+   • Name: "Initial Consultation"
+   • Duration: 30 minutes
+   • Price: Free or ₹500
+   • Click "Save"
+
+⏱️ MINUTE 2: Set Availability
+   • Click clock icon ⏰
+   • Add slot: Mon-Fri, 9am-5pm
+   • Duration: 30 min
+   • Click "Activate"
+
+⏱️ MINUTE 3: Test Booking
+   • Copy your booking link
+   • Open in incognito/private window
+   • Select a time slot
+   • Complete test booking
+   • Check your dashboard!
+
+⏱️ MINUTE 4: Share Link
+   • Copy: zervos.com/yourname/consultation
+   • Send via WhatsApp/Email/SMS
+   • Post on social media
+   • Add to website/bio
+
+⏱️ MINUTE 5: Enable Notifications
+   • Settings > Notifications
+   • Enable email alerts
+   • Enable SMS (optional)
+   • Test with your test booking!
+
+🎉 DONE! You're now accepting online bookings!
+
+📱 Share this link with customers:
+   "Book your appointment here: [your-link]"
+
+💡 Next steps:
+   • Add payment integration
+   • Customize booking page design
+   • Set up automated reminders
+   • Add more services
+
+🚀 Your first real customer is just minutes away!`;
+        alert(quickStart);
+      },
     },
   ];
 
@@ -180,16 +466,69 @@ const HelpSupport = () => {
   const getBotResponse = (userMessage: string): string => {
     const msg = userMessage.toLowerCase();
     
-    if (msg.includes('appointment') || msg.includes('booking')) {
-      return 'To manage appointments, go to the Appointments section from the sidebar. You can view, filter, and manage all your bookings there. Would you like me to connect you with a live agent for detailed assistance?';
-    } else if (msg.includes('time slot') || msg.includes('availability')) {
-      return 'Click the clock icon ⏰ next to notifications to access Time Slot Management. You can add, edit, and manage your availability there. Need help with this? I can connect you to a live agent!';
-    } else if (msg.includes('payment') || msg.includes('invoice')) {
-      return 'For payment settings, navigate to Admin Center > Payment Configuration. We support Razorpay, Stripe, and PayPal. Would you like to speak with an agent about payment setup?';
-    } else if (msg.includes('agent') || msg.includes('human') || msg.includes('support')) {
-      return 'I\'ll connect you with a live agent right away! They typically respond within 2-3 minutes. Please hold on... 🔄';
-    } else {
-      return 'I understand you need help. You can browse our FAQ section, or I can connect you with a live support agent who can provide personalized assistance. What would you prefer?';
+    // Online Booking Related
+    if (msg.includes('online booking') || msg.includes('book online') || msg.includes('online appointment')) {
+      return '🎯 **Online Bookings Made Easy!**\n\nCustomers can book appointments 24/7 through your booking page. Here\'s how:\n\n1️⃣ Create a booking page (Sidebar > Booking Pages)\n2️⃣ Set your availability (Clock icon ⏰)\n3️⃣ Share your booking link\n4️⃣ Get instant notifications when customers book!\n\nYour booking page URL: zervos.com/your-business/service-name\n\nWant help setting this up? I can connect you to a live agent!';
+    }
+    
+    // Appointment/Booking General
+    else if (msg.includes('appointment') || msg.includes('booking')) {
+      return '📅 **Managing Appointments**\n\nGo to **Appointments** section from sidebar to:\n• View all bookings (online & manual)\n• Filter by status, date, staff\n• See calendar view\n• Track payment status\n• Add notes to appointments\n\nCustomers can book online 24/7 through your booking pages! Want to enable online bookings? I can guide you or connect you to a live agent.';
+    }
+    
+    // Time Slots & Availability
+    else if (msg.includes('time slot') || msg.includes('availability') || msg.includes('schedule')) {
+      return '⏰ **Time Slot Management**\n\nClick the **clock icon** next to notifications to:\n• Add/edit available time slots\n• Set recurring availability (e.g., Mon-Fri 9am-5pm)\n• Block dates for holidays\n• Add breaks/lunch hours\n• Assign slots to team members\n\nChanges reflect instantly on your online booking pages! Need detailed help? Connect with a live agent!';
+    }
+    
+    // Customer/Client Questions
+    else if (msg.includes('customer') || msg.includes('client') || msg.includes('people booking')) {
+      return '👥 **Customer Booking Experience**\n\nWhen customers visit your booking page, they:\n1. See available time slots in real-time\n2. Select preferred date/time\n3. Fill in details (name, email, phone)\n4. Pay online (optional)\n5. Get instant confirmation via email/SMS\n\nYou receive notifications immediately! They can also reschedule/cancel if you enable it. Want to customize the booking experience?';
+    }
+    
+    // Payment Related
+    else if (msg.includes('payment') || msg.includes('invoice') || msg.includes('razorpay') || msg.includes('stripe')) {
+      return '💳 **Payment Integration**\n\nNavigate to **Admin Center > Payment Settings**:\n• **Razorpay** (India: UPI, Cards, Wallets)\n• **Stripe** (Global: Cards, Apple Pay)\n• **PayPal** (Worldwide)\n• **Manual** (Cash/Bank Transfer)\n\nYou can charge full payment, deposits, or allow pay-later for online bookings. All transactions are secure and PCI-compliant. Need setup help?';
+    }
+    
+    // POS Related
+    else if (msg.includes('pos') || msg.includes('register') || msg.includes('sale') || msg.includes('walk-in')) {
+      return '🛒 **POS System for Walk-ins**\n\nClick **"Open POS Register"** to:\n• Add services/products to cart\n• Enter customer details\n• Track Staff (Billing), Service Attendee, Sales Agent\n• Accept payments (Cash/Card/UPI)\n• Generate receipts\n• Export reports (CSV/Excel/PDF)\n\nPerfect for walk-in customers! Online bookings go directly to Appointments section. Questions?';
+    }
+    
+    // Staff/Team Management
+    else if (msg.includes('staff') || msg.includes('team') || msg.includes('employee') || msg.includes('member')) {
+      return '👨‍💼 **Team Management**\n\nGo to **Team Members** section to:\n• Add new staff with their own schedules\n• Assign services to specific team members\n• Set individual availability\n• Track performance in reports\n\nCustomers can choose preferred staff during online booking if you enable it! Want to set up your team?';
+    }
+    
+    // Reports & Analytics
+    else if (msg.includes('report') || msg.includes('export') || msg.includes('analytics') || msg.includes('stats')) {
+      return '📊 **Reports & Analytics**\n\n**POS Reports:** Click Export in POS page\n• CSV for spreadsheets\n• Excel with 4 sheets (Summary, Transactions, Items, Staff Performance)\n• PDF professional reports\n• Print preview\n\n**Booking Reports:** Go to Reports section\n• View bookings by date, service, staff\n• Revenue analysis\n• Popular time slots\n• Customer retention\n\nNeed help analyzing data?';
+    }
+    
+    // Notifications
+    else if (msg.includes('notification') || msg.includes('alert') || msg.includes('reminder')) {
+      return '🔔 **Smart Notifications**\n\nYou receive alerts for:\n• New online bookings (instant)\n• Cancellations/Reschedules\n• Payments received\n• Upcoming appointments\n\nCustomers get:\n• Confirmation emails\n• SMS confirmations\n• Reminders (24hr & 1hr before)\n• Thank you messages\n\nCustomize in **Workflows** section! Want to set up automation?';
+    }
+    
+    // Customization/Branding
+    else if (msg.includes('customize') || msg.includes('brand') || msg.includes('logo') || msg.includes('color')) {
+      return '🎨 **Customization & Branding**\n\nIn **Booking Page Settings**, customize:\n• Add your logo\n• Set brand colors\n• Custom header image\n• Welcome message\n• Terms & conditions\n• Thank you page\n\nMake your online booking page match your brand identity! Need design help?';
+    }
+    
+    // Getting Started
+    else if (msg.includes('start') || msg.includes('begin') || msg.includes('how to') || msg.includes('guide')) {
+      return '🚀 **Quick Start Guide**\n\n**For Online Bookings:**\n1. Create booking page (Sidebar > Booking Pages)\n2. Set availability (Clock icon ⏰)\n3. Configure payments (Admin Center)\n4. Share booking link with customers\n\n**For Walk-ins:**\n1. Click "Open POS Register"\n2. Add services to cart\n3. Complete sale\n\nCheck **FAQ tab** for detailed guides! Want a personalized walkthrough?';
+    }
+    
+    // Connect to Agent
+    else if (msg.includes('agent') || msg.includes('human') || msg.includes('support') || msg.includes('help me')) {
+      return '👤 **Connecting to Live Agent**\n\nI\'ll connect you with a support specialist right away! They typically respond within **2-3 minutes**.\n\nWhile you wait, feel free to browse our:\n• FAQ section (27 detailed guides)\n• Video tutorials\n• Documentation\n\nConnecting... 🔄';
+    }
+    
+    // Default response
+    else {
+      return '👋 **How Can I Help?**\n\nI can assist you with:\n• 📅 Online booking setup\n• ⏰ Time slot management\n• 💳 Payment integration\n• 🛒 POS system\n• 👥 Team management\n• 📊 Reports & analytics\n• 🔔 Notifications & automation\n\nJust ask your question, or type "agent" to connect with a live support specialist!\n\n💡 **Quick tip:** Check the FAQ tab for 27 detailed guides about online bookings and appointments!';
     }
   };
 
@@ -281,6 +620,63 @@ const HelpSupport = () => {
           </div>
         </motion.div>
 
+        {/* Online Booking Info Banner */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 p-8 shadow-2xl"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/50 to-transparent backdrop-blur-sm" />
+          <div className="relative z-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <h2 className="text-3xl font-bold text-white mb-3">
+                🌐 Accept Online Bookings 24/7
+              </h2>
+              <p className="text-blue-100 text-lg mb-4">
+                Your customers can book appointments anytime, anywhere! No phone calls needed - 
+                it's all automated with instant notifications, automated reminders, and secure online payments.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+                  <CheckCircle className="h-5 w-5 text-green-300" />
+                  <span className="text-white font-medium">Real-time Availability</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+                  <CheckCircle className="h-5 w-5 text-green-300" />
+                  <span className="text-white font-medium">Instant Confirmations</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+                  <CheckCircle className="h-5 w-5 text-green-300" />
+                  <span className="text-white font-medium">Secure Payments</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+                  <CheckCircle className="h-5 w-5 text-green-300" />
+                  <span className="text-white font-medium">Auto Reminders</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
+              <h3 className="text-xl font-bold text-white mb-4">📋 Quick Checklist</h3>
+              <div className="space-y-3">
+                {[
+                  'Create booking page',
+                  'Set availability & time slots',
+                  'Configure payment gateway',
+                  'Share your booking link',
+                  'Start receiving bookings!',
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm">
+                      {idx + 1}
+                    </div>
+                    <span className="text-white">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
         {/* Support Stats */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           {[
@@ -328,16 +724,19 @@ const HelpSupport = () => {
               >
                 <Card
                   onClick={action.action}
-                  className="group cursor-pointer border-0 bg-white p-6 shadow-lg transition-all hover:shadow-xl"
+                  className="group cursor-pointer border-0 bg-white p-6 shadow-lg transition-all hover:shadow-xl overflow-hidden relative"
                 >
-                  <div className="mb-4 flex items-center justify-between">
-                    <div className="rounded-lg bg-blue-50 p-3">
-                      <action.icon className="h-6 w-6 text-blue-600" />
+                  <div className={`absolute inset-0 bg-gradient-to-br ${action.color} opacity-0 group-hover:opacity-10 transition-opacity`} />
+                  <div className="relative">
+                    <div className="mb-4 flex items-center justify-between">
+                      <div className={`rounded-xl bg-gradient-to-br ${action.color} p-3 shadow-lg`}>
+                        <action.icon className="h-6 w-6 text-white" />
+                      </div>
+                      <ExternalLink className="h-4 w-4 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100" />
                     </div>
-                    <ExternalLink className="h-4 w-4 text-slate-400 opacity-0 transition-opacity group-hover:opacity-100" />
+                    <h3 className="font-semibold text-slate-900">{action.title}</h3>
+                    <p className="mt-1 text-sm text-slate-600">{action.description}</p>
                   </div>
-                  <h3 className="font-semibold text-slate-900">{action.title}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{action.description}</p>
                 </Card>
               </motion.div>
             ))}
