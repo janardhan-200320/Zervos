@@ -151,6 +151,9 @@ export default function WorkflowsPage() {
   const [addActionOpen, setAddActionOpen] = useState(false);
   const [editingAction, setEditingAction] = useState<WorkflowAction | null>(null);
   const [selectedVariable, setSelectedVariable] = useState('');
+  const [editingTemplate, setEditingTemplate] = useState<WorkflowTemplate | null>(null);
+  const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
+  const [customWorkflowMode, setCustomWorkflowMode] = useState(false);
   
   const [newWorkflow, setNewWorkflow] = useState({
     name: '',
@@ -1128,7 +1131,7 @@ export default function WorkflowsPage() {
     reader.readAsText(file);
   };
 
-  const handleCreateFromTemplate = (template: WorkflowTemplate) => {
+  const handleCreateFromTemplate = (template: WorkflowTemplate, edited?: boolean) => {
     const workflow: Workflow = {
       id: Date.now().toString(),
       name: template.name,
@@ -1146,7 +1149,24 @@ export default function WorkflowsPage() {
     const updated = [...workflows, workflow];
     saveWorkflows(updated);
     setTemplatesOpen(false);
-    toast({ title: "Workflow created from template" });
+    setTemplatePreviewOpen(false);
+    setEditingTemplate(null);
+    toast({ title: edited ? "Custom workflow created" : "Workflow created from template" });
+  };
+
+  const handleEditTemplate = (template: WorkflowTemplate) => {
+    setEditingTemplate(template);
+    setTemplatePreviewOpen(true);
+  };
+
+  const handleSaveEditedTemplate = () => {
+    if (editingTemplate) {
+      handleCreateFromTemplate(editingTemplate, true);
+    }
+  };
+
+  const handleCreateCustomWorkflow = () => {
+    setCustomWorkflowMode(true);
   };
 
   const insertVariable = (variable: string, field: 'subject' | 'body' | 'message' | 'to' | 'phoneNumber') => {
@@ -1444,15 +1464,53 @@ export default function WorkflowsPage() {
         </div>
 
         {/* Create Workflow Modal */}
-        <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
-          <DialogContent className="sm:max-w-2xl">
+        <Dialog open={createModalOpen} onOpenChange={(open) => {
+          setCreateModalOpen(open);
+          if (!open) setCustomWorkflowMode(false);
+        }}>
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create New Workflow</DialogTitle>
               <DialogDescription>
-                Set up automated actions for your booking events
+                {customWorkflowMode ? 'Build your custom workflow from scratch' : 'Choose how to create your workflow'}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 overflow-y-auto max-h-[calc(85vh-180px)]">
+              {!customWorkflowMode && (
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <Button
+                    variant="outline"
+                    className="h-24 flex flex-col gap-2 border-2 hover:border-purple-500 hover:bg-purple-50"
+                    onClick={() => setTemplatesOpen(true)}
+                  >
+                    <FileText size={24} className="text-purple-600" />
+                    <div className="text-center">
+                      <p className="font-semibold text-sm">Use Template</p>
+                      <p className="text-xs text-gray-500">Start from {workflowTemplates.length} pre-built templates</p>
+                    </div>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="h-24 flex flex-col gap-2 border-2 hover:border-blue-500 hover:bg-blue-50"
+                    onClick={handleCreateCustomWorkflow}
+                  >
+                    <Code size={24} className="text-blue-600" />
+                    <div className="text-center">
+                      <p className="font-semibold text-sm">Custom Workflow</p>
+                      <p className="text-xs text-gray-500">Build from scratch manually</p>
+                    </div>
+                  </Button>
+                </div>
+              )}
+              {customWorkflowMode && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <Code size={18} className="text-blue-600" />
+                    <p className="text-sm font-medium text-blue-900">Custom Workflow Mode</p>
+                  </div>
+                  <p className="text-xs text-blue-700 mt-1">Define your workflow details below, then add actions after creation</p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Workflow Name *</Label>
                 <Input
@@ -1507,15 +1565,147 @@ export default function WorkflowsPage() {
                         Payment Received
                       </div>
                     </SelectItem>
+                    <SelectItem value="customer_created">
+                      <div className="flex items-center gap-2">
+                        <Users size={16} />
+                        Customer Created
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="time_based">
+                      <div className="flex items-center gap-2">
+                        <Clock size={16} />
+                        Time Based (Scheduled)
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="custom_event">
+                      <div className="flex items-center gap-2">
+                        <Code size={16} />
+                        Custom Event
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              
+              {/* Custom trigger configuration fields */}
+              {newWorkflow.trigger === 'booking_reminder' && (
+                <div className="space-y-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <Label>Days Before Appointment</Label>
+                  <Input
+                    type="number"
+                    placeholder="1"
+                    defaultValue="1"
+                    onChange={(e) => setNewWorkflow({
+                      ...newWorkflow,
+                      trigger: 'booking_reminder'
+                    })}
+                  />
+                  <p className="text-xs text-gray-600">Trigger this workflow X days before the scheduled appointment</p>
+                </div>
+              )}
+              
+              {newWorkflow.trigger === 'time_based' && (
+                <div className="space-y-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div>
+                    <Label>Scheduled Time</Label>
+                    <Input
+                      type="time"
+                      defaultValue="09:00"
+                      onChange={(e) => setNewWorkflow({
+                        ...newWorkflow,
+                        trigger: 'time_based'
+                      })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Timezone</Label>
+                    <Select defaultValue="Asia/Kolkata">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Asia/Kolkata">Asia/Kolkata (IST)</SelectItem>
+                        <SelectItem value="America/New_York">America/New_York (EST)</SelectItem>
+                        <SelectItem value="America/Los_Angeles">America/Los_Angeles (PST)</SelectItem>
+                        <SelectItem value="Europe/London">Europe/London (GMT)</SelectItem>
+                        <SelectItem value="Australia/Sydney">Australia/Sydney (AEST)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-gray-600">Run this workflow daily at the specified time</p>
+                </div>
+              )}
+              
+              {newWorkflow.trigger === 'custom_event' && (
+                <div className="space-y-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <div className="flex items-start gap-2 mb-2">
+                    <Code size={16} className="text-purple-600 mt-1" />
+                    <div>
+                      <p className="text-sm font-medium text-purple-900">Custom Event Configuration</p>
+                      <p className="text-xs text-purple-700">Define your own trigger event and conditions</p>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <Label>Event Name *</Label>
+                    <Input
+                      placeholder="e.g., customer_inactive_60days, inventory_low_stock"
+                      onChange={(e) => setNewWorkflow({
+                        ...newWorkflow,
+                        trigger: 'custom_event'
+                      })}
+                    />
+                    <p className="text-xs text-gray-600 mt-1">Use lowercase with underscores (no spaces)</p>
+                  </div>
+                  
+                  <div>
+                    <Label>Event Description</Label>
+                    <Textarea
+                      placeholder="Describe when this custom event should trigger"
+                      rows={2}
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label>Trigger Condition (Optional)</Label>
+                    <Select defaultValue="manual">
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="manual">Manual Trigger (API/Webhook)</SelectItem>
+                        <SelectItem value="condition">Based on Condition</SelectItem>
+                        <SelectItem value="schedule">On Schedule</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="bg-white border border-purple-200 rounded p-2">
+                    <p className="text-xs font-medium text-purple-900 mb-1">💡 Usage Examples:</p>
+                    <ul className="text-xs text-purple-800 space-y-1 ml-4 list-disc">
+                      <li>customer_inactive_60days - Re-engage dormant customers</li>
+                      <li>inventory_reorder_needed - Auto-reorder low stock items</li>
+                      <li>subscription_expiring_soon - Renewal reminders</li>
+                      <li>vip_customer_registered - Special welcome flow</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setCreateModalOpen(false)}>
+              {customWorkflowMode && (
+                <Button variant="ghost" onClick={() => setCustomWorkflowMode(false)}>
+                  Back to Options
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => {
+                setCreateModalOpen(false);
+                setCustomWorkflowMode(false);
+              }}>
                 Cancel
               </Button>
               <Button onClick={handleCreateWorkflow} disabled={!newWorkflow.name || !newWorkflow.trigger}>
+                <Plus size={16} className="mr-2" />
                 Create Workflow
               </Button>
             </DialogFooter>
@@ -2822,13 +3012,22 @@ export default function WorkflowsPage() {
                                       <Badge variant="outline" className="text-xs">{template.category}</Badge>
                                     </div>
                                   </div>
-                                  <Button 
-                                    size="sm" 
-                                    onClick={() => handleCreateFromTemplate(template)}
-                                    className="ml-2"
-                                  >
-                                    Use Template
-                                  </Button>
+                                  <div className="flex gap-1 ml-2">
+                                    <Button 
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleEditTemplate(template)}
+                                    >
+                                      <Edit size={14} className="mr-1" />
+                                      Edit
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      onClick={() => handleCreateFromTemplate(template)}
+                                    >
+                                      Use
+                                    </Button>
+                                  </div>
                                 </div>
                               </CardHeader>
                               <CardContent>
@@ -2883,6 +3082,252 @@ export default function WorkflowsPage() {
                 ))}
               </Tabs>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Template Preview/Edit Modal */}
+        <Dialog open={templatePreviewOpen} onOpenChange={setTemplatePreviewOpen}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Edit size={20} className="text-purple-600" />
+                Edit Template: {editingTemplate?.name}
+              </DialogTitle>
+              <DialogDescription>
+                Customize this template before creating your workflow
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {editingTemplate && (
+                <>
+                  {/* Basic Details */}
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Workflow Name</Label>
+                      <Input
+                        value={editingTemplate.name}
+                        onChange={(e) => setEditingTemplate({
+                          ...editingTemplate,
+                          name: e.target.value
+                        })}
+                        placeholder="Enter workflow name"
+                      />
+                    </div>
+                    <div>
+                      <Label>Description</Label>
+                      <Textarea
+                        value={editingTemplate.description}
+                        onChange={(e) => setEditingTemplate({
+                          ...editingTemplate,
+                          description: e.target.value
+                        })}
+                        placeholder="Describe what this workflow does"
+                        rows={3}
+                      />
+                    </div>
+                    <div>
+                      <Label>Category</Label>
+                      <Input
+                        value={editingTemplate.category}
+                        onChange={(e) => setEditingTemplate({
+                          ...editingTemplate,
+                          category: e.target.value
+                        })}
+                        placeholder="e.g., Booking, Customer, Reminders"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Trigger Configuration */}
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                      <Zap size={16} className="text-green-600" />
+                      Trigger Event
+                    </h4>
+                    <div className="space-y-3">
+                      <div>
+                        <Label>Trigger Type</Label>
+                        <Select
+                          value={editingTemplate.workflow.trigger?.type}
+                          onValueChange={(value) => setEditingTemplate({
+                            ...editingTemplate,
+                            workflow: {
+                              ...editingTemplate.workflow,
+                              trigger: {
+                                ...editingTemplate.workflow.trigger!,
+                                type: value as any,
+                                label: triggerLabels[value as keyof typeof triggerLabels]
+                              }
+                            }
+                          })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="booking_created">Booking Created</SelectItem>
+                            <SelectItem value="booking_rescheduled">Booking Rescheduled</SelectItem>
+                            <SelectItem value="booking_cancelled">Booking Cancelled</SelectItem>
+                            <SelectItem value="booking_reminder">Booking Reminder</SelectItem>
+                            <SelectItem value="payment_received">Payment Received</SelectItem>
+                            <SelectItem value="customer_created">Customer Created</SelectItem>
+                            <SelectItem value="time_based">Time Based</SelectItem>
+                            <SelectItem value="custom_event">Custom Event</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {editingTemplate.workflow.trigger?.type === 'booking_reminder' && (
+                        <div>
+                          <Label>Days Before Appointment</Label>
+                          <Input
+                            type="number"
+                            value={editingTemplate.workflow.trigger?.config?.daysBeforeAppointment || 1}
+                            onChange={(e) => setEditingTemplate({
+                              ...editingTemplate,
+                              workflow: {
+                                ...editingTemplate.workflow,
+                                trigger: {
+                                  ...editingTemplate.workflow.trigger!,
+                                  config: {
+                                    ...editingTemplate.workflow.trigger!.config,
+                                    daysBeforeAppointment: parseInt(e.target.value)
+                                  }
+                                }
+                              }
+                            })}
+                            placeholder="1"
+                          />
+                        </div>
+                      )}
+                      {editingTemplate.workflow.trigger?.type === 'time_based' && (
+                        <div>
+                          <Label>Scheduled Time</Label>
+                          <Input
+                            type="time"
+                            value={editingTemplate.workflow.trigger?.config?.time || '09:00'}
+                            onChange={(e) => setEditingTemplate({
+                              ...editingTemplate,
+                              workflow: {
+                                ...editingTemplate.workflow,
+                                trigger: {
+                                  ...editingTemplate.workflow.trigger!,
+                                  config: {
+                                    ...editingTemplate.workflow.trigger!.config,
+                                    time: e.target.value
+                                  }
+                                }
+                              }
+                            })}
+                          />
+                        </div>
+                      )}
+                      {editingTemplate.workflow.trigger?.type === 'custom_event' && (
+                        <div>
+                          <Label>Custom Event Name</Label>
+                          <Input
+                            value={editingTemplate.workflow.trigger?.config?.customEventName || ''}
+                            onChange={(e) => setEditingTemplate({
+                              ...editingTemplate,
+                              workflow: {
+                                ...editingTemplate.workflow,
+                                trigger: {
+                                  ...editingTemplate.workflow.trigger!,
+                                  config: {
+                                    ...editingTemplate.workflow.trigger!.config,
+                                    customEventName: e.target.value
+                                  }
+                                }
+                              }
+                            })}
+                            placeholder="e.g., customer_inactive_60days"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions Preview */}
+                  <div className="border-t pt-4">
+                    <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                      <Settings size={16} className="text-blue-600" />
+                      Actions ({editingTemplate.workflow.actions?.length || 0})
+                    </h4>
+                    {editingTemplate.workflow.actions && editingTemplate.workflow.actions.length > 0 ? (
+                      <div className="space-y-2">
+                        {editingTemplate.workflow.actions.map((action, index) => {
+                          const ActionIcon = actionIcons[action.type];
+                          return (
+                            <div key={action.id} className="border rounded-lg p-3 bg-gray-50">
+                              <div className="flex items-center gap-3">
+                                <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center text-xs font-semibold text-blue-600">
+                                  {index + 1}
+                                </div>
+                                <ActionIcon size={16} className="text-blue-600" />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium">{actionLabels[action.type]}</p>
+                                  <p className="text-xs text-gray-500">
+                                    {action.type === 'email' && `To: ${action.config?.to || 'Not set'}`}
+                                    {action.type === 'sms' && `Phone: ${action.config?.phoneNumber || 'Not set'}`}
+                                    {action.type === 'wait' && `${action.config?.delayAmount} ${action.config?.delayUnit}`}
+                                  </p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const updatedActions = editingTemplate.workflow.actions!.filter((_, i) => i !== index);
+                                    setEditingTemplate({
+                                      ...editingTemplate,
+                                      workflow: {
+                                        ...editingTemplate.workflow,
+                                        actions: updatedActions
+                                      }
+                                    });
+                                  }}
+                                >
+                                  <Trash2 size={14} className="text-red-500" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 border-2 border-dashed rounded-lg bg-gray-50">
+                        <p className="text-sm text-gray-500">No actions configured</p>
+                        <p className="text-xs text-gray-400 mt-1">You can add actions after creating the workflow</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info Banner */}
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={16} className="text-purple-600 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-medium text-purple-900">Template Customization</p>
+                        <p className="text-xs text-purple-700 mt-1">
+                          You can edit the basic details and trigger here. After creating the workflow,
+                          use the workflow builder to add, edit, or remove actions.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setTemplatePreviewOpen(false);
+                setEditingTemplate(null);
+              }}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveEditedTemplate}>
+                <CheckCircle2 size={16} className="mr-2" />
+                Create Workflow
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

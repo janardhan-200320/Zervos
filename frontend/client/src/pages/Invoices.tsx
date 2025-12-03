@@ -15,7 +15,16 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import {
   Search,
   Download,
@@ -33,6 +42,29 @@ import {
   CheckSquare,
   Square,
   X,
+  BarChart3,
+  FileSpreadsheet,
+  ChevronDown,
+  Clock,
+  CalendarDays,
+  CalendarRange,
+  Users,
+  CreditCard,
+  PieChart as PieChartIcon,
+  ArrowUpRight,
+  ArrowDownRight,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  Phone,
+  MessageCircle,
+  MessageSquare,
+  Send,
+  MoreVertical,
+  Printer,
+  ExternalLink,
+  Copy,
+  Share2,
 } from 'lucide-react';
 import {
   getAllInvoices,
@@ -66,6 +98,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import jsPDF from 'jspdf';
 
 export default function InvoicesPage() {
   const { toast } = useToast();
@@ -75,26 +108,15 @@ export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkActionMode, setBulkActionMode] = useState(false);
-  const [services, setServices] = useState<any[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
   const [amountRange, setAmountRange] = useState({ min: '', max: '' });
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [invoiceForm, setInvoiceForm] = useState({
-    customerName: '',
-    customerEmail: '',
-    customerPhone: '',
-    serviceOrProductId: '',
-    itemType: 'service', // 'service' or 'product'
-    paymentMethod: 'Cash',
-    currency: 'INR',
-    status: 'Paid' as 'Paid' | 'Pending' | 'Cancelled',
-    notes: '',
-  });
+  const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('month');
+  const [customReportDates, setCustomReportDates] = useState({ from: '', to: '' });
 
   const stats = useMemo(() => getInvoiceStats(), [invoices]);
 
@@ -149,148 +171,519 @@ export default function InvoicesPage() {
     };
   }, [invoices, stats]);
 
-  // Load services and products
-  useEffect(() => {
-    loadServicesAndProducts();
-    
-    const handleUpdate = () => loadServicesAndProducts();
-    window.addEventListener('services-updated', handleUpdate);
-    window.addEventListener('products-updated', handleUpdate);
-    
-    return () => {
-      window.removeEventListener('services-updated', handleUpdate);
-      window.removeEventListener('products-updated', handleUpdate);
-    };
-  }, []);
+  // Get filtered invoices based on report period
+  const getFilteredInvoicesByPeriod = () => {
+    const now = new Date();
+    let startDate: Date;
+    let endDate = new Date(now);
+    endDate.setHours(23, 59, 59, 999);
 
-  const loadServicesAndProducts = () => {
-    try {
-      const currentWorkspace = localStorage.getItem('zervos_current_workspace') || 'default';
-      
-      // Load services
-      const servicesKey = `zervos_services_${currentWorkspace}`;
-      const servicesRaw = localStorage.getItem(servicesKey);
-      if (servicesRaw) {
-        const servicesList = JSON.parse(servicesRaw);
-        setServices(Array.isArray(servicesList) ? servicesList.filter((s: any) => s.isEnabled) : []);
-      }
-      
-      // Load products
-      const productsKey = `zervos_products_${currentWorkspace}`;
-      const productsRaw = localStorage.getItem(productsKey);
-      if (productsRaw) {
-        const productsList = JSON.parse(productsRaw);
-        setProducts(Array.isArray(productsList) ? productsList.filter((p: any) => p.isEnabled) : []);
-      }
-    } catch (error) {
-      console.error('Error loading services and products:', error);
+    switch (reportPeriod) {
+      case 'today':
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'week':
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'month':
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'year':
+        startDate = new Date(now);
+        startDate.setFullYear(now.getFullYear() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'custom':
+        startDate = customReportDates.from ? new Date(customReportDates.from) : new Date(now);
+        endDate = customReportDates.to ? new Date(customReportDates.to) : new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+        break;
+      default:
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 1);
     }
+
+    return invoices.filter(invoice => {
+      const invoiceDate = new Date(invoice.dateIssued);
+      return invoiceDate >= startDate && invoiceDate <= endDate;
+    });
   };
 
-  // Create invoice from form
-  const handleCreateInvoice = async () => {
-    if (!invoiceForm.customerName || !invoiceForm.customerEmail || !invoiceForm.serviceOrProductId) {
-      toast({
-        title: 'Missing Information',
-        description: 'Please fill in all required fields',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const { createInvoice } = await import('@/lib/invoice-utils');
+  // Generate comprehensive invoice report
+  const generateInvoiceReport = () => {
+    const filteredInvoices = getFilteredInvoicesByPeriod();
+    const totalInvoices = filteredInvoices.length;
+    const paidInvoices = filteredInvoices.filter(i => i.status === 'Paid');
+    const pendingInvoices = filteredInvoices.filter(i => i.status === 'Pending');
+    const cancelledInvoices = filteredInvoices.filter(i => i.status === 'Cancelled');
     
-    // Find the selected service or product
-    const selectedItem = invoiceForm.itemType === 'service'
-      ? services.find(s => s.id === invoiceForm.serviceOrProductId)
-      : products.find(p => p.id === invoiceForm.serviceOrProductId);
+    const totalRevenue = paidInvoices.reduce((sum, i) => sum + i.amount, 0);
+    const pendingAmount = pendingInvoices.reduce((sum, i) => sum + i.amount, 0);
+    const cancelledAmount = cancelledInvoices.reduce((sum, i) => sum + i.amount, 0);
+    const averageInvoiceValue = totalInvoices > 0 ? (totalRevenue + pendingAmount) / totalInvoices : 0;
+    
+    // Payment method breakdown
+    const paymentMethods: { [key: string]: { count: number; amount: number } } = {};
+    paidInvoices.forEach(invoice => {
+      const method = invoice.paymentMethod || 'Unknown';
+      if (!paymentMethods[method]) {
+        paymentMethods[method] = { count: 0, amount: 0 };
+      }
+      paymentMethods[method].count += 1;
+      paymentMethods[method].amount += invoice.amount;
+    });
 
-    if (!selectedItem) {
-      toast({
-        title: 'Item Not Found',
-        description: 'Selected service or product not found',
-        variant: 'destructive',
-      });
-      return;
-    }
+    // Customer breakdown
+    const customerBreakdown: { [key: string]: { count: number; amount: number } } = {};
+    filteredInvoices.forEach(invoice => {
+      const customer = invoice.customer.name;
+      if (!customerBreakdown[customer]) {
+        customerBreakdown[customer] = { count: 0, amount: 0 };
+      }
+      customerBreakdown[customer].count += 1;
+      if (invoice.status === 'Paid') {
+        customerBreakdown[customer].amount += invoice.amount;
+      }
+    });
 
-    const getCurrencySymbol = (code: string) => {
-      const symbols: { [key: string]: string } = {
-        'INR': '₹', 'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥',
-        'AUD': 'A$', 'CAD': 'C$', 'CHF': 'CHF', 'CNY': '¥', 'AED': 'د.إ',
-      };
-      return symbols[code] || '₹';
+    const topCustomers = Object.entries(customerBreakdown)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 10);
+
+    // Daily revenue trend
+    const dailyRevenue: { [key: string]: number } = {};
+    paidInvoices.forEach(invoice => {
+      const date = new Date(invoice.dateIssued).toLocaleDateString('en-IN');
+      dailyRevenue[date] = (dailyRevenue[date] || 0) + invoice.amount;
+    });
+
+    // Service/Product breakdown
+    const itemBreakdown: { [key: string]: { count: number; amount: number } } = {};
+    filteredInvoices.forEach(invoice => {
+      const itemName = invoice.service?.name || 'Unknown Service';
+      if (!itemBreakdown[itemName]) {
+        itemBreakdown[itemName] = { count: 0, amount: 0 };
+      }
+      itemBreakdown[itemName].count += 1;
+      if (invoice.status === 'Paid') {
+        itemBreakdown[itemName].amount += invoice.amount || 0;
+      }
+    });
+
+    const topItems = Object.entries(itemBreakdown)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 10);
+
+    const periodLabel = reportPeriod === 'today' ? 'Today' :
+                        reportPeriod === 'week' ? 'Last 7 Days' :
+                        reportPeriod === 'month' ? 'Last 30 Days' :
+                        reportPeriod === 'year' ? 'Last 12 Months' :
+                        `${customReportDates.from} to ${customReportDates.to}`;
+
+    return {
+      period: periodLabel,
+      summary: {
+        totalInvoices,
+        paidCount: paidInvoices.length,
+        pendingCount: pendingInvoices.length,
+        cancelledCount: cancelledInvoices.length,
+        totalRevenue,
+        pendingAmount,
+        cancelledAmount,
+        averageInvoiceValue,
+        collectionRate: totalInvoices > 0 ? ((paidInvoices.length / totalInvoices) * 100).toFixed(1) : '0',
+      },
+      paymentMethods: Object.entries(paymentMethods).map(([method, data]) => ({
+        method,
+        count: data.count,
+        amount: data.amount,
+        percentage: paidInvoices.length > 0 ? ((data.count / paidInvoices.length) * 100).toFixed(1) : '0',
+      })),
+      topCustomers,
+      topItems,
+      dailyRevenue: Object.entries(dailyRevenue).map(([date, amount]) => ({ date, amount })),
+      allInvoices: filteredInvoices.map(invoice => ({
+        id: invoice.invoiceId,
+        customer: invoice.customer.name,
+        email: invoice.customer.email,
+        phone: invoice.customer.phone || '',
+        amount: invoice.amount,
+        status: invoice.status,
+        paymentMethod: invoice.paymentMethod || '',
+        dateIssued: invoice.dateIssued,
+        items: invoice.service?.name || '',
+      })),
+      recommendations: [
+        pendingInvoices.length > 5 ? `${pendingInvoices.length} invoices pending - consider follow-up reminders` : null,
+        cancelledInvoices.length > 0 ? `${cancelledInvoices.length} cancelled invoices worth ₹${cancelledAmount.toLocaleString('en-IN')}` : null,
+        topCustomers.length > 0 && topCustomers[0].amount > totalRevenue * 0.3 ? `${topCustomers[0].name} contributes ${((topCustomers[0].amount / totalRevenue) * 100).toFixed(0)}% of revenue - diversify customer base` : null,
+      ].filter(Boolean),
     };
+  };
 
-    const price = parseFloat(selectedItem.price);
-    const subtotal = price;
-    const taxAmount = Math.round((subtotal * 18) / 100); // 18% tax
-    const amount = subtotal + taxAmount;
-
-    const companyData = localStorage.getItem('zervos_company');
-    const company = companyData ? JSON.parse(companyData) : { name: 'Your Company', email: '' };
-
-    const newInvoice = createInvoice({
-      bookingId: 'BOOK-' + Date.now(),
-      customer: {
-        name: invoiceForm.customerName,
-        email: invoiceForm.customerEmail,
-        phone: invoiceForm.customerPhone,
-      },
-      service: {
-        name: selectedItem.name,
-        duration: selectedItem.duration || (invoiceForm.itemType === 'product' ? `SKU: ${selectedItem.sku}` : 'N/A'),
-        price: price,
-      },
-      amount: amount,
-      subtotal: subtotal,
-      taxAmount: taxAmount,
-      paymentMethod: invoiceForm.paymentMethod,
-      currency: getCurrencySymbol(invoiceForm.currency),
-      status: invoiceForm.status,
-      company: {
-        name: company.businessName || company.name || 'Your Company',
-        email: company.email || '',
-      },
-      bookingDate: new Date().toLocaleDateString(),
-      bookingTime: new Date().toLocaleTimeString(),
-      notes: invoiceForm.notes || 'Thank you for your business!',
+  // Download invoice report as CSV
+  const downloadInvoiceReportCSV = () => {
+    const report = generateInvoiceReport();
+    const lines: string[] = [];
+    
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('INVOICE ANALYTICS REPORT');
+    lines.push(`Period: ${report.period}`);
+    lines.push(`Generated: ${new Date().toLocaleString()}`);
+    lines.push('═══════════════════════════════════════════════════════════════');
+    lines.push('');
+    
+    lines.push('EXECUTIVE SUMMARY');
+    lines.push('-----------------');
+    lines.push(`Total Invoices,${report.summary.totalInvoices}`);
+    lines.push(`Paid Invoices,${report.summary.paidCount}`);
+    lines.push(`Pending Invoices,${report.summary.pendingCount}`);
+    lines.push(`Cancelled Invoices,${report.summary.cancelledCount}`);
+    lines.push(`Total Revenue,₹${report.summary.totalRevenue.toLocaleString('en-IN')}`);
+    lines.push(`Pending Amount,₹${report.summary.pendingAmount.toLocaleString('en-IN')}`);
+    lines.push(`Average Invoice Value,₹${report.summary.averageInvoiceValue.toLocaleString('en-IN')}`);
+    lines.push(`Collection Rate,${report.summary.collectionRate}%`);
+    lines.push('');
+    
+    lines.push('PAYMENT METHODS');
+    lines.push('---------------');
+    lines.push('Method,Count,Amount,Percentage');
+    report.paymentMethods.forEach(pm => {
+      lines.push(`${pm.method},${pm.count},₹${pm.amount.toLocaleString('en-IN')},${pm.percentage}%`);
+    });
+    lines.push('');
+    
+    lines.push('TOP CUSTOMERS');
+    lines.push('-------------');
+    lines.push('Customer,Invoices,Revenue');
+    report.topCustomers.forEach(c => {
+      lines.push(`"${c.name}",${c.count},₹${c.amount.toLocaleString('en-IN')}`);
+    });
+    lines.push('');
+    
+    lines.push('INVOICE DETAILS');
+    lines.push('---------------');
+    lines.push('Invoice ID,Customer,Email,Phone,Amount,Status,Payment Method,Date,Items');
+    report.allInvoices.forEach(inv => {
+      lines.push(`"${inv.id}","${inv.customer}","${inv.email}","${inv.phone}",₹${inv.amount.toLocaleString('en-IN')},"${inv.status}","${inv.paymentMethod}","${inv.dateIssued}","${inv.items}"`);
     });
     
-    setInvoices(getAllInvoices());
-    setIsCreateModalOpen(false);
-    
-    // Reset form
-    setInvoiceForm({
-      customerName: '',
-      customerEmail: '',
-      customerPhone: '',
-      serviceOrProductId: '',
-      itemType: 'service',
-      paymentMethod: 'Cash',
-      currency: 'INR',
-      status: 'Paid',
-      notes: '',
-    });
-    
-    // Trigger notification based on payment status
-    if (newInvoice.status === 'Paid') {
-      notifyPaymentReceived(notifications, {
-        customerName: invoiceForm.customerName,
-        amount: newInvoice.amount,
-        invoiceId: newInvoice.invoiceId,
-      });
-    } else if (newInvoice.status === 'Pending') {
-      notifyPaymentPending(notifications, {
-        customerName: invoiceForm.customerName,
-        amount: newInvoice.amount,
-        invoiceId: newInvoice.invoiceId,
-      });
-    }
+    const csvContent = lines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Invoice_Report_${report.period.replace(/\s/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
     
     toast({
-      title: 'Invoice Created',
-      description: `Invoice ${newInvoice.invoiceId} has been created`,
+      title: '📊 Report Downloaded',
+      description: 'Invoice report saved as CSV file',
+    });
+  };
+
+  // Download invoice report as Excel
+  const downloadInvoiceReportExcel = () => {
+    const report = generateInvoiceReport();
+    const lines: string[] = [];
+    
+    lines.push('INVOICE ANALYTICS REPORT');
+    lines.push(`Period:\t${report.period}`);
+    lines.push(`Generated:\t${new Date().toLocaleString()}`);
+    lines.push('');
+    
+    lines.push('SUMMARY METRICS');
+    lines.push('Metric\tValue');
+    lines.push(`Total Invoices\t${report.summary.totalInvoices}`);
+    lines.push(`Paid Invoices\t${report.summary.paidCount}`);
+    lines.push(`Pending Invoices\t${report.summary.pendingCount}`);
+    lines.push(`Cancelled Invoices\t${report.summary.cancelledCount}`);
+    lines.push(`Total Revenue\t₹${report.summary.totalRevenue.toLocaleString('en-IN')}`);
+    lines.push(`Pending Amount\t₹${report.summary.pendingAmount.toLocaleString('en-IN')}`);
+    lines.push(`Cancelled Amount\t₹${report.summary.cancelledAmount.toLocaleString('en-IN')}`);
+    lines.push(`Average Invoice Value\t₹${report.summary.averageInvoiceValue.toLocaleString('en-IN')}`);
+    lines.push(`Collection Rate\t${report.summary.collectionRate}%`);
+    lines.push('');
+    
+    lines.push('PAYMENT METHODS');
+    lines.push('Method\tCount\tAmount\tPercentage');
+    report.paymentMethods.forEach(pm => {
+      lines.push(`${pm.method}\t${pm.count}\t₹${pm.amount.toLocaleString('en-IN')}\t${pm.percentage}%`);
+    });
+    lines.push('');
+    
+    lines.push('TOP CUSTOMERS');
+    lines.push('Customer\tInvoices\tRevenue');
+    report.topCustomers.forEach(c => {
+      lines.push(`${c.name}\t${c.count}\t₹${c.amount.toLocaleString('en-IN')}`);
+    });
+    lines.push('');
+    
+    lines.push('TOP SERVICES/PRODUCTS');
+    lines.push('Item\tCount\tRevenue');
+    report.topItems.forEach(item => {
+      lines.push(`${item.name}\t${item.count}\t₹${item.amount.toLocaleString('en-IN')}`);
+    });
+    lines.push('');
+    
+    lines.push('COMPLETE INVOICE LIST');
+    lines.push('Invoice ID\tCustomer\tEmail\tPhone\tAmount\tStatus\tPayment Method\tDate\tItems');
+    report.allInvoices.forEach(inv => {
+      lines.push(`${inv.id}\t${inv.customer}\t${inv.email}\t${inv.phone}\t₹${inv.amount.toLocaleString('en-IN')}\t${inv.status}\t${inv.paymentMethod}\t${inv.dateIssued}\t${inv.items}`);
+    });
+    
+    const excelContent = lines.join('\n');
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Invoice_Report_${report.period.replace(/\s/g, '_')}_${new Date().toISOString().split('T')[0]}.xls`;
+    link.click();
+    
+    toast({
+      title: '📊 Report Downloaded',
+      description: 'Invoice report saved as Excel file',
+    });
+  };
+
+  // Download invoice report as PDF
+  const downloadInvoiceReportPDF = () => {
+    const report = generateInvoiceReport();
+    const doc = new jsPDF();
+    let yPosition = 20;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const contentWidth = pageWidth - (margin * 2);
+    
+    const checkNewPage = (requiredSpace: number) => {
+      if (yPosition + requiredSpace > 280) {
+        doc.addPage();
+        yPosition = 20;
+      }
+    };
+    
+    // Title
+    doc.setFillColor(139, 92, 246);
+    doc.rect(0, 0, pageWidth, 45, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Invoice Analytics Report', pageWidth / 2, 22, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Period: ${report.period}`, pageWidth / 2, 32, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 40, { align: 'center' });
+    
+    yPosition = 60;
+    doc.setTextColor(0, 0, 0);
+    
+    // Executive Summary
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, yPosition - 5, contentWidth, 60, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, yPosition - 5, contentWidth, 60, 'S');
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('Executive Summary', margin + 5, yPosition + 5);
+    
+    yPosition += 15;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    
+    const col1 = margin + 5;
+    const col2 = margin + 60;
+    const col3 = margin + 115;
+    
+    doc.setTextColor(100, 116, 139);
+    doc.text('Total Invoices:', col1, yPosition);
+    doc.text('Paid:', col2, yPosition);
+    doc.text('Pending:', col3, yPosition);
+    yPosition += 8;
+    doc.setTextColor(30, 41, 59);
+    doc.setFont('helvetica', 'bold');
+    doc.text(report.summary.totalInvoices.toString(), col1, yPosition);
+    doc.text(report.summary.paidCount.toString(), col2, yPosition);
+    doc.text(report.summary.pendingCount.toString(), col3, yPosition);
+    
+    yPosition += 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Total Revenue:', col1, yPosition);
+    doc.text('Pending Amount:', col2, yPosition);
+    doc.text('Collection Rate:', col3, yPosition);
+    yPosition += 8;
+    doc.setTextColor(30, 41, 59);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`₹${report.summary.totalRevenue.toLocaleString('en-IN')}`, col1, yPosition);
+    doc.text(`₹${report.summary.pendingAmount.toLocaleString('en-IN')}`, col2, yPosition);
+    doc.text(`${report.summary.collectionRate}%`, col3, yPosition);
+    
+    yPosition += 25;
+    
+    // Payment Methods
+    checkNewPage(60);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(139, 92, 246);
+    doc.text('Payment Methods', margin, yPosition);
+    yPosition += 10;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Method', margin, yPosition);
+    doc.text('Count', margin + 50, yPosition);
+    doc.text('Amount', margin + 80, yPosition);
+    doc.text('Share', margin + 130, yPosition);
+    yPosition += 2;
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, yPosition, margin + contentWidth, yPosition);
+    yPosition += 6;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    report.paymentMethods.forEach(pm => {
+      checkNewPage(10);
+      doc.text(pm.method, margin, yPosition);
+      doc.text(pm.count.toString(), margin + 50, yPosition);
+      doc.text(`₹${pm.amount.toLocaleString('en-IN')}`, margin + 80, yPosition);
+      doc.text(`${pm.percentage}%`, margin + 130, yPosition);
+      yPosition += 8;
+    });
+    
+    yPosition += 10;
+    
+    // Top Customers
+    checkNewPage(70);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(139, 92, 246);
+    doc.text('Top Customers', margin, yPosition);
+    yPosition += 10;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Customer', margin, yPosition);
+    doc.text('Invoices', margin + 80, yPosition);
+    doc.text('Revenue', margin + 120, yPosition);
+    yPosition += 2;
+    doc.line(margin, yPosition, margin + contentWidth, yPosition);
+    yPosition += 6;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    report.topCustomers.slice(0, 5).forEach(c => {
+      checkNewPage(10);
+      doc.text(c.name.substring(0, 35), margin, yPosition);
+      doc.text(c.count.toString(), margin + 80, yPosition);
+      doc.text(`₹${c.amount.toLocaleString('en-IN')}`, margin + 120, yPosition);
+      yPosition += 8;
+    });
+    
+    // Invoice Details Page
+    doc.addPage();
+    yPosition = 20;
+    
+    doc.setFillColor(139, 92, 246);
+    doc.rect(0, 0, pageWidth, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Invoice Details', pageWidth / 2, 18, { align: 'center' });
+    
+    yPosition = 45;
+    
+    // Table headers
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.setFillColor(71, 85, 105);
+    doc.rect(margin, yPosition - 5, contentWidth, 10, 'F');
+    
+    doc.text('Invoice ID', margin + 2, yPosition);
+    doc.text('Customer', margin + 35, yPosition);
+    doc.text('Amount', margin + 85, yPosition);
+    doc.text('Status', margin + 120, yPosition);
+    doc.text('Date', margin + 150, yPosition);
+    yPosition += 10;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(7);
+    
+    report.allInvoices.slice(0, 30).forEach((inv, idx) => {
+      checkNewPage(10);
+      
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, yPosition - 4, contentWidth, 8, 'F');
+      }
+      
+      doc.text(inv.id.substring(0, 15), margin + 2, yPosition);
+      doc.text(inv.customer.substring(0, 25), margin + 35, yPosition);
+      doc.text(`₹${inv.amount.toLocaleString('en-IN')}`, margin + 85, yPosition);
+      doc.text(inv.status, margin + 120, yPosition);
+      doc.text(inv.dateIssued, margin + 150, yPosition);
+      
+      yPosition += 8;
+    });
+    
+    if (report.allInvoices.length > 30) {
+      yPosition += 5;
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`... and ${report.allInvoices.length - 30} more invoices`, margin, yPosition);
+    }
+    
+    // Recommendations
+    if (report.recommendations.length > 0) {
+      doc.addPage();
+      yPosition = 20;
+      
+      doc.setFillColor(245, 158, 11);
+      doc.rect(0, 0, pageWidth, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Insights & Recommendations', pageWidth / 2, 18, { align: 'center' });
+      
+      yPosition = 50;
+      doc.setTextColor(51, 65, 85);
+      doc.setFontSize(10);
+      
+      report.recommendations.forEach((rec, idx) => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${idx + 1}.`, margin, yPosition);
+        doc.setFont('helvetica', 'normal');
+        doc.text(rec as string, margin + 10, yPosition);
+        yPosition += 12;
+      });
+    }
+    
+    // Footer on all pages
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, 290, { align: 'center' });
+    }
+    
+    doc.save(`Invoice_Report_${report.period.replace(/\s/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    
+    toast({
+      title: '📊 Report Downloaded',
+      description: 'Invoice report saved as PDF file',
     });
   };
 
@@ -365,8 +758,8 @@ export default function InvoicesPage() {
         message: `Invoice ${invoice.invoiceId} sent to ${invoice.customer.name}`,
         priority: 'low',
         metadata: {
-          invoiceId: invoice.invoiceId,
-          customer: invoice.customer.email,
+          bookingId: invoice.invoiceId,
+          customerId: invoice.customer.email,
         },
       });
       
@@ -381,6 +774,66 @@ export default function InvoicesPage() {
         variant: 'destructive',
       });
     }
+  };
+
+  // Send invoice via WhatsApp
+  const handleSendWhatsApp = (invoice: Invoice) => {
+    const phone = invoice.customer.phone?.replace(/[^0-9]/g, '') || '';
+    if (!phone) {
+      toast({
+        title: 'No Phone Number',
+        description: 'Customer phone number is not available',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const message = encodeURIComponent(
+      `*Invoice ${invoice.invoiceId}*\n\n` +
+      `Dear ${invoice.customer.name},\n\n` +
+      `Thank you for your business!\n\n` +
+      `📋 *Invoice Details:*\n` +
+      `• Service: ${invoice.service.name}\n` +
+      `• Amount: ${invoice.currency}${invoice.amount.toFixed(2)}\n` +
+      `• Status: ${invoice.status}\n` +
+      `• Date: ${new Date(invoice.dateIssued).toLocaleDateString()}\n\n` +
+      `For any queries, please contact us.\n\n` +
+      `Best regards,\n${invoice.company?.name || 'Our Team'}`
+    );
+
+    const whatsappUrl = `https://wa.me/${phone.startsWith('91') ? phone : '91' + phone}?text=${message}`;
+    window.open(whatsappUrl, '_blank');
+
+    toast({
+      title: '📱 WhatsApp Opened',
+      description: `Sending invoice to ${invoice.customer.name}`,
+    });
+  };
+
+  // Send invoice via SMS
+  const handleSendSMS = (invoice: Invoice) => {
+    const phone = invoice.customer.phone?.replace(/[^0-9]/g, '') || '';
+    if (!phone) {
+      toast({
+        title: 'No Phone Number',
+        description: 'Customer phone number is not available',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const message = encodeURIComponent(
+      `Invoice ${invoice.invoiceId} - ${invoice.service.name}: ${invoice.currency}${invoice.amount.toFixed(2)} (${invoice.status}). Thank you! - ${invoice.company?.name || 'Our Team'}`
+    );
+
+    // Try SMS URL scheme (works on mobile devices)
+    const smsUrl = `sms:${phone}?body=${message}`;
+    window.open(smsUrl, '_self');
+
+    toast({
+      title: '💬 SMS Ready',
+      description: `Opening SMS for ${invoice.customer.name}`,
+    });
   };
 
   const handleDeleteInvoice = (invoiceId: string) => {
@@ -444,7 +897,7 @@ export default function InvoicesPage() {
     const { sendInvoiceEmail, logInvoiceEmail } = await import('@/lib/email-service');
     let successCount = 0;
     
-    for (const invoiceId of selectedInvoices) {
+    for (const invoiceId of Array.from(selectedInvoices)) {
       const invoice = invoices.find(inv => inv.invoiceId === invoiceId);
       if (invoice) {
         const success = await sendInvoiceEmail({
@@ -489,14 +942,14 @@ export default function InvoicesPage() {
       // Transform invoice to transaction format
       const transaction = {
         id: invoice.invoiceId,
-        date: invoice.issueDate,
+        date: invoice.dateIssued,
         customer: {
-          name: invoice.customerName,
-          email: invoice.customerEmail,
-          phone: invoice.customerPhone,
+          name: invoice.customer.name,
+          email: invoice.customer.email,
+          phone: invoice.customer.phone || '',
         },
         items: [{
-          name: invoice.serviceName || 'Service',
+          name: invoice.service?.name || 'Service',
           qty: 1,
           price: invoice.amount,
           assignedPerson: '',
@@ -607,6 +1060,40 @@ export default function InvoicesPage() {
             <p className="text-gray-600 mt-1">Manage and track all your billing invoices</p>
           </div>
           <div className="flex gap-2">
+            {/* Reports Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="border-purple-300 text-purple-700 hover:bg-purple-50">
+                  <BarChart3 className="mr-2" size={18} />
+                  Reports
+                  <ChevronDown className="ml-2" size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => { setReportPeriod('today'); setIsReportsDialogOpen(true); }}>
+                  <Clock className="mr-2" size={16} />
+                  Today's Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setReportPeriod('week'); setIsReportsDialogOpen(true); }}>
+                  <CalendarDays className="mr-2" size={16} />
+                  Weekly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setReportPeriod('month'); setIsReportsDialogOpen(true); }}>
+                  <Calendar className="mr-2" size={16} />
+                  Monthly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setReportPeriod('year'); setIsReportsDialogOpen(true); }}>
+                  <CalendarRange className="mr-2" size={16} />
+                  Yearly Report
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => { setReportPeriod('custom'); setIsReportsDialogOpen(true); }}>
+                  <Filter className="mr-2" size={16} />
+                  Custom Range
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button 
               variant={showAnalytics ? "default" : "outline"}
               onClick={() => setShowAnalytics(!showAnalytics)}
@@ -625,10 +1112,6 @@ export default function InvoicesPage() {
             >
               {bulkActionMode ? <X className="mr-2" size={18} /> : <CheckSquare className="mr-2" size={18} />}
               {bulkActionMode ? 'Cancel' : 'Select'}
-            </Button>
-            <Button onClick={() => setIsCreateModalOpen(true)} className="bg-purple-600 hover:bg-purple-700">
-              <Plus className="mr-2" size={18} />
-              Create Invoice
             </Button>
           </div>
         </div>
@@ -899,6 +1382,9 @@ export default function InvoicesPage() {
                       Customer
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                      Phone
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                       Service
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -944,6 +1430,11 @@ export default function InvoicesPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
+                        <div className="text-sm text-gray-900">
+                          {invoice.customer.phone || 'N/A'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
                         <div className="text-sm text-gray-900">{invoice.service.name}</div>
                         <div className="text-xs text-gray-500">{invoice.service.duration}</div>
                       </td>
@@ -965,68 +1456,70 @@ export default function InvoicesPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewInvoice(invoice)}
-                            title="View Invoice"
-                          >
-                            <Eye size={16} />
-                          </Button>
-                          <div className="relative group">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Print Bill"
-                              className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
-                            >
-                              <Receipt size={16} />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical size={16} />
                             </Button>
-                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[160px]">
-                              <button
-                                onClick={() => handlePrintInvoice(invoice, true)}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-t-lg"
-                              >
-                                <FileCheck size={14} className="text-green-600" />
-                                <span>With Tax</span>
-                              </button>
-                              <button
-                                onClick={() => handlePrintInvoice(invoice, false)}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 rounded-b-lg"
-                              >
-                                <FileText size={14} className="text-blue-600" />
-                                <span>Without Tax</span>
-                              </button>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDownloadInvoice(invoice)}
-                            title="Download PDF"
-                          >
-                            <Download size={16} />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSendEmail(invoice)}
-                            title="Send Email to Customer"
-                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                          >
-                            <Mail size={16} />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteInvoice(invoice.invoiceId)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            title="Delete Invoice"
-                          >
-                            <Trash2 size={16} />
-                          </Button>
-                        </div>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            {/* View & Details */}
+                            <DropdownMenuItem onClick={() => handleViewInvoice(invoice)}>
+                              <Eye size={16} className="mr-2 text-gray-600" />
+                              View Invoice
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              navigator.clipboard.writeText(invoice.invoiceId);
+                              toast({ title: 'Copied!', description: 'Invoice ID copied to clipboard' });
+                            }}>
+                              <Copy size={16} className="mr-2 text-gray-600" />
+                              Copy Invoice ID
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuSeparator />
+                            
+                            {/* Print Options */}
+                            <DropdownMenuItem onClick={() => handlePrintInvoice(invoice, true)}>
+                              <Receipt size={16} className="mr-2 text-purple-600" />
+                              Print with Tax
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handlePrintInvoice(invoice, false)}>
+                              <FileText size={16} className="mr-2 text-blue-600" />
+                              Print without Tax
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDownloadInvoice(invoice)}>
+                              <Download size={16} className="mr-2 text-gray-600" />
+                              Download PDF
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuSeparator />
+                            
+                            {/* Send Options */}
+                            <DropdownMenuItem onClick={() => handleSendEmail(invoice)}>
+                              <Mail size={16} className="mr-2 text-blue-600" />
+                              Send via Email
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleSendWhatsApp(invoice)}>
+                              <MessageCircle size={16} className="mr-2 text-green-600" />
+                              Send via WhatsApp
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleSendSMS(invoice)}>
+                              <MessageSquare size={16} className="mr-2 text-cyan-600" />
+                              Send via SMS
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuSeparator />
+                            
+                            {/* Delete */}
+                            <DropdownMenuItem 
+                              onClick={() => handleDeleteInvoice(invoice.invoiceId)}
+                              className="text-red-600 focus:text-red-600"
+                            >
+                              <Trash2 size={16} className="mr-2" />
+                              Delete Invoice
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </td>
                     </tr>
                   ))}
@@ -1061,154 +1554,319 @@ export default function InvoicesPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Create Invoice Modal */}
-        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-          <DialogContent className="sm:max-w-xl">
+        {/* Invoice Reports Dialog */}
+        <Dialog open={isReportsDialogOpen} onOpenChange={setIsReportsDialogOpen}>
+          <DialogContent className="sm:max-w-[1100px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Create New Invoice</DialogTitle>
+              <DialogTitle className="text-2xl flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <BarChart3 className="text-white" size={24} />
+                </div>
+                Invoice Analytics Report
+              </DialogTitle>
+              <DialogDescription>
+                Comprehensive invoice report with insights and analytics
+              </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              {/* Customer Details */}
-              <div className="space-y-2">
-                <Label htmlFor="customerName">Customer Name *</Label>
-                <Input
-                  id="customerName"
-                  placeholder="John Doe"
-                  value={invoiceForm.customerName}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, customerName: e.target.value })}
-                />
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="customerEmail">Email *</Label>
+            {/* Period Selector */}
+            <div className="flex flex-wrap items-center gap-3 py-4 border-b">
+              <span className="text-sm font-medium text-gray-600">Period:</span>
+              <div className="flex gap-2">
+                {[
+                  { value: 'today', label: 'Today', icon: Clock },
+                  { value: 'week', label: 'Week', icon: CalendarDays },
+                  { value: 'month', label: 'Month', icon: Calendar },
+                  { value: 'year', label: 'Year', icon: CalendarRange },
+                  { value: 'custom', label: 'Custom', icon: Filter },
+                ].map(({ value, label, icon: Icon }) => (
+                  <Button
+                    key={value}
+                    variant={reportPeriod === value ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setReportPeriod(value as any)}
+                    className={reportPeriod === value ? "bg-purple-600 hover:bg-purple-700" : ""}
+                  >
+                    <Icon className="mr-1" size={14} />
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              {reportPeriod === 'custom' && (
+                <div className="flex gap-2 items-center ml-auto">
                   <Input
-                    id="customerEmail"
-                    type="email"
-                    placeholder="john@example.com"
-                    value={invoiceForm.customerEmail}
-                    onChange={(e) => setInvoiceForm({ ...invoiceForm, customerEmail: e.target.value })}
+                    type="date"
+                    value={customReportDates.from}
+                    onChange={(e) => setCustomReportDates({ ...customReportDates, from: e.target.value })}
+                    className="w-40"
+                  />
+                  <span className="text-gray-500">to</span>
+                  <Input
+                    type="date"
+                    value={customReportDates.to}
+                    onChange={(e) => setCustomReportDates({ ...customReportDates, to: e.target.value })}
+                    className="w-40"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="customerPhone">Phone</Label>
-                  <Input
-                    id="customerPhone"
-                    placeholder="+91 9876543210"
-                    value={invoiceForm.customerPhone}
-                    onChange={(e) => setInvoiceForm({ ...invoiceForm, customerPhone: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              {/* Item Selection */}
-              <div className="space-y-2">
-                <Label>Item Type</Label>
-                <Select
-                  value={invoiceForm.itemType}
-                  onValueChange={(value) => setInvoiceForm({ ...invoiceForm, itemType: value, serviceOrProductId: '' })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="service">Service</SelectItem>
-                    <SelectItem value="product">Product</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Select {invoiceForm.itemType === 'service' ? 'Service' : 'Product'} *</Label>
-                <Select
-                  value={invoiceForm.serviceOrProductId}
-                  onValueChange={(value) => setInvoiceForm({ ...invoiceForm, serviceOrProductId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={`Choose a ${invoiceForm.itemType}`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {invoiceForm.itemType === 'service' ? (
-                      services.length > 0 ? (
-                        services.map((service) => (
-                          <SelectItem key={service.id} value={service.id}>
-                            {service.name} - ₹{service.price}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="none" disabled>No services available</SelectItem>
-                      )
-                    ) : (
-                      products.length > 0 ? (
-                        products.map((product) => (
-                          <SelectItem key={product.id} value={product.id}>
-                            {product.name} - ₹{product.price}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="none" disabled>No products available</SelectItem>
-                      )
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Payment Details */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Payment Method</Label>
-                  <Select
-                    value={invoiceForm.paymentMethod}
-                    onValueChange={(value) => setInvoiceForm({ ...invoiceForm, paymentMethod: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="UPI">UPI</SelectItem>
-                      <SelectItem value="Card">Card</SelectItem>
-                      <SelectItem value="Net Banking">Net Banking</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select
-                    value={invoiceForm.status}
-                    onValueChange={(value) => setInvoiceForm({ ...invoiceForm, status: value as 'Paid' | 'Pending' | 'Cancelled' })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Paid">Paid</SelectItem>
-                      <SelectItem value="Pending">Pending</SelectItem>
-                      <SelectItem value="Cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Input
-                  id="notes"
-                  placeholder="Thank you for your business!"
-                  value={invoiceForm.notes}
-                  onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                />
-              </div>
+              )}
             </div>
-            
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-                Cancel
+
+            {(() => {
+              const report = generateInvoiceReport();
+              return (
+                <div className="space-y-6 py-4">
+                  {/* Executive Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg">
+                      <div className="flex items-center justify-between">
+                        <FileText className="h-8 w-8 opacity-80" />
+                        <span className="text-3xl font-bold">{report.summary.totalInvoices}</span>
+                      </div>
+                      <p className="text-sm mt-2 opacity-90">Total Invoices</p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-4 text-white shadow-lg">
+                      <div className="flex items-center justify-between">
+                        <CheckCircle2 className="h-8 w-8 opacity-80" />
+                        <span className="text-3xl font-bold">{report.summary.paidCount}</span>
+                      </div>
+                      <p className="text-sm mt-2 opacity-90">Paid Invoices</p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl p-4 text-white shadow-lg">
+                      <div className="flex items-center justify-between">
+                        <AlertCircle className="h-8 w-8 opacity-80" />
+                        <span className="text-3xl font-bold">{report.summary.pendingCount}</span>
+                      </div>
+                      <p className="text-sm mt-2 opacity-90">Pending</p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg">
+                      <div className="flex items-center justify-between">
+                        <DollarSign className="h-8 w-8 opacity-80" />
+                        <span className="text-2xl font-bold">₹{report.summary.totalRevenue.toLocaleString('en-IN')}</span>
+                      </div>
+                      <p className="text-sm mt-2 opacity-90">Total Revenue</p>
+                    </div>
+                  </div>
+
+                  {/* Additional Metrics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <div className="flex items-center gap-2 text-slate-600 mb-1">
+                        <CreditCard className="h-4 w-4 text-purple-500" />
+                        <span className="text-sm font-medium">Pending Amount</span>
+                      </div>
+                      <span className="text-xl font-bold text-slate-900">₹{report.summary.pendingAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <div className="flex items-center gap-2 text-slate-600 mb-1">
+                        <XCircle className="h-4 w-4 text-red-500" />
+                        <span className="text-sm font-medium">Cancelled</span>
+                      </div>
+                      <span className="text-xl font-bold text-slate-900">{report.summary.cancelledCount}</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <div className="flex items-center gap-2 text-slate-600 mb-1">
+                        <TrendingUp className="h-4 w-4 text-green-500" />
+                        <span className="text-sm font-medium">Collection Rate</span>
+                      </div>
+                      <span className="text-xl font-bold text-slate-900">{report.summary.collectionRate}%</span>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <div className="flex items-center gap-2 text-slate-600 mb-1">
+                        <Receipt className="h-4 w-4 text-blue-500" />
+                        <span className="text-sm font-medium">Avg Invoice Value</span>
+                      </div>
+                      <span className="text-xl font-bold text-slate-900">₹{report.summary.averageInvoiceValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                    </div>
+                  </div>
+
+                  {/* Payment Methods & Top Customers */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Payment Methods */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-center gap-2 mb-4">
+                        <CreditCard className="h-5 w-5 text-purple-600" />
+                        <h3 className="font-semibold text-slate-900">Payment Methods</h3>
+                      </div>
+                      <div className="space-y-3">
+                        {report.paymentMethods.length > 0 ? (
+                          report.paymentMethods.map((pm, idx) => (
+                            <div key={idx} className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div 
+                                  className="w-3 h-3 rounded-full" 
+                                  style={{ backgroundColor: ['#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', '#ef4444'][idx % 5] }}
+                                />
+                                <span className="text-sm text-slate-700">{pm.method}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-medium text-slate-900">₹{pm.amount.toLocaleString('en-IN')}</span>
+                                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{pm.percentage}%</span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500 text-center py-4">No payment data available</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Top Customers */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Users className="h-5 w-5 text-blue-600" />
+                        <h3 className="font-semibold text-slate-900">Top Customers</h3>
+                      </div>
+                      <div className="space-y-3">
+                        {report.topCustomers.length > 0 ? (
+                          report.topCustomers.slice(0, 5).map((c, idx) => (
+                            <div key={idx} className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
+                                  {idx + 1}
+                                </div>
+                                <span className="text-sm text-slate-700 truncate max-w-[150px]">{c.name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500">{c.count} inv</span>
+                                <span className="text-sm font-medium text-slate-900">₹{c.amount.toLocaleString('en-IN')}</span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500 text-center py-4">No customer data available</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Invoice List Preview */}
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-4 py-3 border-b border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-5 w-5 text-slate-600" />
+                          <h3 className="font-semibold text-slate-900">Invoice Details</h3>
+                        </div>
+                        <span className="text-sm text-slate-500">{report.allInvoices.length} invoices</span>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Invoice ID</th>
+                            <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Customer</th>
+                            <th className="text-right text-xs font-semibold text-slate-600 px-4 py-3">Amount</th>
+                            <th className="text-center text-xs font-semibold text-slate-600 px-4 py-3">Status</th>
+                            <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Payment</th>
+                            <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.allInvoices.slice(0, 10).map((inv, idx) => (
+                            <tr key={idx} className="border-t border-slate-100 hover:bg-slate-50">
+                              <td className="px-4 py-3 text-sm font-medium text-purple-600">{inv.id.substring(0, 12)}...</td>
+                              <td className="px-4 py-3">
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900">{inv.customer}</p>
+                                  <p className="text-xs text-slate-500">{inv.email}</p>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-sm font-medium text-slate-900">₹{inv.amount.toLocaleString('en-IN')}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                  inv.status === 'Paid' ? 'bg-green-100 text-green-700' :
+                                  inv.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {inv.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-slate-600">{inv.paymentMethod || '-'}</td>
+                              <td className="px-4 py-3 text-sm text-slate-600">{inv.dateIssued}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {report.allInvoices.length > 10 && (
+                        <div className="bg-slate-50 px-4 py-3 text-center border-t border-slate-100">
+                          <span className="text-sm text-slate-500">
+                            +{report.allInvoices.length - 10} more invoices (download report for full list)
+                          </span>
+                        </div>
+                      )}
+                      {report.allInvoices.length === 0 && (
+                        <div className="px-4 py-8 text-center">
+                          <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                          <p className="text-sm text-slate-500">No invoices found for this period</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  {report.recommendations.length > 0 && (
+                    <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <AlertCircle className="h-5 w-5 text-amber-600" />
+                        <h3 className="font-semibold text-amber-900">Insights & Recommendations</h3>
+                      </div>
+                      <ul className="space-y-2">
+                        {report.recommendations.map((rec, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm text-amber-800">
+                            <ArrowUpRight className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                            {rec}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Download Options */}
+                  <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Download className="h-5 w-5 text-slate-600" />
+                      <h3 className="font-semibold text-slate-900">Download Report</h3>
+                    </div>
+                    <p className="text-sm text-slate-600 mb-4">
+                      Export the complete invoice report in your preferred format
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <Button
+                        onClick={downloadInvoiceReportCSV}
+                        className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md"
+                      >
+                        <FileSpreadsheet className="mr-2 h-4 w-4" />
+                        Download CSV
+                      </Button>
+                      <Button
+                        onClick={downloadInvoiceReportExcel}
+                        className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-md"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Download Excel
+                      </Button>
+                      <Button
+                        onClick={downloadInvoiceReportPDF}
+                        className="w-full bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Download PDF
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <DialogFooter className="pt-4 border-t">
+              <Button variant="outline" onClick={() => setIsReportsDialogOpen(false)}>
+                Close
               </Button>
-              <Button onClick={handleCreateInvoice} className="bg-purple-600 hover:bg-purple-700">
-                Create Invoice
-              </Button>
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

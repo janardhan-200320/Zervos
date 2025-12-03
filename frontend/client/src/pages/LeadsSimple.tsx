@@ -4,8 +4,10 @@ import {
   Plus, Search, Filter, MoreVertical, Mail, Phone, Calendar, Building2, 
   User, Edit, Trash2, Eye, Briefcase, FileText, Clock, CheckCircle2, 
   XCircle, Users, TrendingUp, Download, Package, DollarSign, ShoppingBag,
-  FileSpreadsheet, Star, AlertCircle
+  FileSpreadsheet, Star, AlertCircle, Upload, ShoppingCart, BarChart3,
+  PieChart, ArrowUpRight, ArrowDownRight, Target, Activity, CalendarDays
 } from 'lucide-react';
+import jsPDF from 'jspdf';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -222,7 +224,7 @@ const appointmentStatusColors = {
   cancelled: 'bg-red-100 text-red-800 border-red-200',
 };
 
-export default function LeadsPage() {
+export default function CustomersPage() {
   const [leads, setLeads] = useState<Lead[]>(mockLeads);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [activeTab, setActiveTab] = useState<'leads' | 'customers'>('leads');
@@ -235,6 +237,12 @@ export default function LeadsPage() {
   const [isEditLeadDialogOpen, setIsEditLeadDialogOpen] = useState(false);
   const [isEditCustomerDialogOpen, setIsEditCustomerDialogOpen] = useState(false);
   const [isBulkLeadDialogOpen, setIsBulkLeadDialogOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false);
+  const [reportPeriod, setReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('month');
+  const [customReportDates, setCustomReportDates] = useState({ from: '', to: '' });
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importedData, setImportedData] = useState<any[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [editingLead, setEditingLead] = useState<any>(null);
@@ -419,6 +427,617 @@ export default function LeadsPage() {
     
     return matchesSearch;
   });
+
+  // Download CSV Template for Bulk Import
+  const downloadCustomerCSVTemplate = () => {
+    const headers = [
+      'Customer Name',
+      'Email',
+      'Phone',
+      'Company',
+      'Role',
+      'Source',
+      'Notes'
+    ];
+    
+    const sampleData = [
+      ['John Smith', 'john.smith@email.com', '9876543210', 'Tech Corp', 'CEO', 'LinkedIn', 'Interested in enterprise package'],
+      ['Sarah Johnson', 'sarah.j@company.com', '9876543211', 'Innovation Labs', 'Marketing Director', 'Referral', 'Looking for marketing solutions'],
+      ['Michael Chen', 'mchen@business.com', '9876543212', 'Global Solutions', 'Operations Manager', 'Website', 'Needs integration support'],
+      ['Emily Davis', 'emily.d@startup.io', '9876543213', 'StartupXYZ', 'Founder', 'Email Campaign', 'Early stage discussion'],
+      ['Robert Wilson', 'rwilson@enterprise.com', '9876543214', 'Enterprise Inc', 'CTO', 'Phone', 'Technical requirements discussion'],
+    ];
+
+    let csvContent = '';
+    csvContent += headers.join(',') + '\n';
+    sampleData.forEach(row => {
+      csvContent += row.join(',') + '\n';
+    });
+    for (let i = 0; i < 10; i++) {
+      csvContent += ',,,,,,' + '\n';
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'Customers_Bulk_Import_Template.csv';
+    link.click();
+
+    toast({
+      title: '📥 Template Downloaded!',
+      description: 'Open in Excel → Fill your customer data and upload!',
+      duration: 5000,
+    });
+  };
+
+  // Parse CSV File for Bulk Import
+  const parseCustomerCSV = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        toast({
+          title: 'Invalid CSV',
+          description: 'CSV file must contain headers and at least one data row',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const data: any[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+        if (values[0] && values[0] !== '') {
+          const row: any = {};
+          headers.forEach((header, index) => {
+            row[header] = values[index] || '';
+          });
+          data.push(row);
+        }
+      }
+
+      if (data.length === 0) {
+        toast({
+          title: 'No Data Found',
+          description: 'CSV file does not contain valid data rows',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setImportedData(data);
+      toast({
+        title: '✅ CSV Parsed Successfully',
+        description: `Found ${data.length} customer entries ready to import`,
+      });
+    };
+
+    reader.readAsText(file);
+  };
+
+  // Process Bulk Import
+  const processBulkImport = () => {
+    if (importedData.length === 0) return;
+
+    const newLeadsFromCSV: Lead[] = importedData.map((row, index) => ({
+      id: `imported-${Date.now()}-${index}`,
+      name: row['Customer Name'] || '',
+      email: row['Email'] || '',
+      phone: row['Phone'] || '',
+      company: row['Company'] || '',
+      role: row['Role'] || '',
+      source: row['Source'] || 'Bulk Import',
+      notes: row['Notes'] || '',
+      createdAt: new Date().toISOString().split('T')[0],
+      appointments: [],
+      totalAppointments: 0,
+      completedAppointments: 0,
+    }));
+
+    setLeads([...newLeadsFromCSV, ...leads]);
+    setIsBulkImportOpen(false);
+    setCsvFile(null);
+    setImportedData([]);
+
+    toast({
+      title: '🎉 Customers Imported!',
+      description: `Successfully imported ${newLeadsFromCSV.length} customers`,
+    });
+  };
+
+  // Get filtered customers based on report period
+  const getFilteredCustomersByPeriod = () => {
+    const now = new Date();
+    let startDate: Date;
+    let endDate = new Date(now);
+    endDate.setHours(23, 59, 59, 999);
+
+    switch (reportPeriod) {
+      case 'today':
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'week':
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'month':
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'year':
+        startDate = new Date(now);
+        startDate.setFullYear(now.getFullYear() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'custom':
+        startDate = customReportDates.from ? new Date(customReportDates.from) : new Date(now);
+        endDate = customReportDates.to ? new Date(customReportDates.to) : new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+        break;
+      default:
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 1);
+    }
+
+    return leads.filter(lead => {
+      const createdDate = new Date(lead.createdAt);
+      return createdDate >= startDate && createdDate <= endDate;
+    });
+  };
+
+  // Generate comprehensive customer report data
+  const generateCustomerReport = () => {
+    const filtered = getFilteredCustomersByPeriod();
+    const periodLabel = reportPeriod === 'today' ? 'Today' :
+                        reportPeriod === 'week' ? 'Last 7 Days' :
+                        reportPeriod === 'month' ? 'Last 30 Days' :
+                        reportPeriod === 'year' ? 'Last 12 Months' :
+                        `${customReportDates.from} to ${customReportDates.to}`;
+    
+    const totalCustomers = filtered.length;
+    const activeCustomers = filtered.filter(l => l.appointments.length > 0).length;
+    const newCustomersThisMonth = filtered.filter(l => {
+      const createdDate = new Date(l.createdAt);
+      const now = new Date();
+      return createdDate.getMonth() === now.getMonth() && createdDate.getFullYear() === now.getFullYear();
+    }).length;
+    
+    const totalAppointments = filtered.reduce((sum, l) => sum + l.totalAppointments, 0);
+    const completedAppointments = filtered.reduce((sum, l) => sum + l.completedAppointments, 0);
+    const conversionRate = totalCustomers > 0 ? ((activeCustomers / totalCustomers) * 100).toFixed(1) : '0';
+    
+    // Source breakdown
+    const sourceBreakdown: { [key: string]: number } = {};
+    filtered.forEach(lead => {
+      const source = lead.source || 'Unknown';
+      sourceBreakdown[source] = (sourceBreakdown[source] || 0) + 1;
+    });
+    
+    // Company breakdown
+    const companyBreakdown: { [key: string]: number } = {};
+    filtered.forEach(lead => {
+      if (lead.company) {
+        companyBreakdown[lead.company] = (companyBreakdown[lead.company] || 0) + 1;
+      }
+    });
+    
+    // Top companies by customer count
+    const topCompanies = Object.entries(companyBreakdown)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    
+    // Monthly trends
+    const monthlyTrends: { [key: string]: number } = {};
+    filtered.forEach(lead => {
+      const date = new Date(lead.createdAt);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      monthlyTrends[monthKey] = (monthlyTrends[monthKey] || 0) + 1;
+    });
+    
+    return {
+      period: periodLabel,
+      summary: {
+        totalCustomers,
+        activeCustomers,
+        inactiveCustomers: totalCustomers - activeCustomers,
+        newCustomersThisMonth,
+        totalAppointments,
+        completedAppointments,
+        pendingAppointments: totalAppointments - completedAppointments,
+        conversionRate: parseFloat(conversionRate),
+        averageAppointmentsPerCustomer: totalCustomers > 0 ? (totalAppointments / totalCustomers).toFixed(1) : '0',
+      },
+      sourceBreakdown: Object.entries(sourceBreakdown).map(([source, count]) => ({
+        source,
+        count,
+        percentage: totalCustomers > 0 ? ((count / totalCustomers) * 100).toFixed(1) : '0',
+      })),
+      topCompanies: topCompanies.map(([company, count]) => ({
+        company,
+        count,
+        percentage: totalCustomers > 0 ? ((count / totalCustomers) * 100).toFixed(1) : '0',
+      })),
+      monthlyTrends: Object.entries(monthlyTrends)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([month, count]) => ({ month, count })),
+      allCustomers: filtered.map(lead => ({
+        name: lead.name,
+        email: lead.email,
+        phone: lead.phone,
+        company: lead.company,
+        role: lead.role,
+        source: lead.source,
+        createdAt: lead.createdAt,
+        totalAppointments: lead.totalAppointments,
+        completedAppointments: lead.completedAppointments,
+        status: lead.appointments.length > 0 ? 'Active' : 'Inactive',
+        lastContact: lead.lastContact || 'N/A',
+        notes: lead.notes,
+      })),
+      recommendations: [
+        activeCustomers < totalCustomers * 0.5 ? 'Consider engagement campaigns for inactive customers' : null,
+        newCustomersThisMonth < 5 ? 'Focus on lead generation to increase new customer acquisition' : null,
+        completedAppointments < totalAppointments * 0.8 ? 'Follow up on pending appointments to improve completion rate' : null,
+        Object.keys(sourceBreakdown).length < 3 ? 'Diversify customer acquisition channels' : null,
+      ].filter(Boolean),
+    };
+  };
+
+  // Download customer report as CSV
+  const downloadCustomerReportCSV = () => {
+    const report = generateCustomerReport();
+    const lines: string[] = [];
+    
+    // Header
+    lines.push('========================================');
+    lines.push('CUSTOMER ANALYTICS REPORT');
+    lines.push(`Generated: ${new Date().toLocaleString()}`);
+    lines.push('========================================');
+    lines.push('');
+    
+    // Summary section
+    lines.push('EXECUTIVE SUMMARY');
+    lines.push('-----------------');
+    lines.push(`Total Customers,${report.summary.totalCustomers}`);
+    lines.push(`Active Customers,${report.summary.activeCustomers}`);
+    lines.push(`Inactive Customers,${report.summary.inactiveCustomers}`);
+    lines.push(`New This Month,${report.summary.newCustomersThisMonth}`);
+    lines.push(`Conversion Rate,${report.summary.conversionRate}%`);
+    lines.push(`Total Appointments,${report.summary.totalAppointments}`);
+    lines.push(`Completed Appointments,${report.summary.completedAppointments}`);
+    lines.push(`Avg Appointments/Customer,${report.summary.averageAppointmentsPerCustomer}`);
+    lines.push('');
+    
+    // Source breakdown
+    lines.push('SOURCE BREAKDOWN');
+    lines.push('----------------');
+    lines.push('Source,Count,Percentage');
+    report.sourceBreakdown.forEach(item => {
+      lines.push(`${item.source},${item.count},${item.percentage}%`);
+    });
+    lines.push('');
+    
+    // Top companies
+    lines.push('TOP COMPANIES');
+    lines.push('-------------');
+    lines.push('Company,Customers,Percentage');
+    report.topCompanies.forEach(item => {
+      lines.push(`${item.company},${item.count},${item.percentage}%`);
+    });
+    lines.push('');
+    
+    // All customers
+    lines.push('CUSTOMER DETAILS');
+    lines.push('----------------');
+    lines.push('Name,Email,Phone,Company,Role,Source,Status,Total Appointments,Completed,Created Date');
+    report.allCustomers.forEach(customer => {
+      lines.push(`"${customer.name}","${customer.email}","${customer.phone}","${customer.company || ''}","${customer.role || ''}","${customer.source || ''}","${customer.status}",${customer.totalAppointments},${customer.completedAppointments},"${customer.createdAt}"`);
+    });
+    
+    const csvContent = lines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Customer_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    
+    toast({
+      title: '📊 Report Downloaded',
+      description: 'Customer report saved as CSV file',
+    });
+  };
+
+  // Download customer report as Excel
+  const downloadCustomerReportExcel = () => {
+    const report = generateCustomerReport();
+    const lines: string[] = [];
+    
+    // Excel-friendly format with tabs
+    lines.push('CUSTOMER ANALYTICS REPORT');
+    lines.push(`Generated:\t${new Date().toLocaleString()}`);
+    lines.push('');
+    
+    // Summary
+    lines.push('SUMMARY METRICS');
+    lines.push('Metric\tValue');
+    lines.push(`Total Customers\t${report.summary.totalCustomers}`);
+    lines.push(`Active Customers\t${report.summary.activeCustomers}`);
+    lines.push(`Inactive Customers\t${report.summary.inactiveCustomers}`);
+    lines.push(`New This Month\t${report.summary.newCustomersThisMonth}`);
+    lines.push(`Conversion Rate\t${report.summary.conversionRate}%`);
+    lines.push(`Total Appointments\t${report.summary.totalAppointments}`);
+    lines.push(`Completed Appointments\t${report.summary.completedAppointments}`);
+    lines.push(`Pending Appointments\t${report.summary.pendingAppointments}`);
+    lines.push(`Avg Appointments/Customer\t${report.summary.averageAppointmentsPerCustomer}`);
+    lines.push('');
+    
+    // Source Analysis
+    lines.push('SOURCE ANALYSIS');
+    lines.push('Source\tCount\tPercentage');
+    report.sourceBreakdown.forEach(item => {
+      lines.push(`${item.source}\t${item.count}\t${item.percentage}%`);
+    });
+    lines.push('');
+    
+    // Top Companies
+    lines.push('TOP COMPANIES');
+    lines.push('Company\tCustomers\tPercentage');
+    report.topCompanies.forEach(item => {
+      lines.push(`${item.company}\t${item.count}\t${item.percentage}%`);
+    });
+    lines.push('');
+    
+    // Customer Details
+    lines.push('COMPLETE CUSTOMER LIST');
+    lines.push('Name\tEmail\tPhone\tCompany\tRole\tSource\tStatus\tTotal Appointments\tCompleted\tCreated Date\tLast Contact\tNotes');
+    report.allCustomers.forEach(customer => {
+      lines.push(`${customer.name}\t${customer.email}\t${customer.phone}\t${customer.company || ''}\t${customer.role || ''}\t${customer.source || ''}\t${customer.status}\t${customer.totalAppointments}\t${customer.completedAppointments}\t${customer.createdAt}\t${customer.lastContact}\t${customer.notes || ''}`);
+    });
+    
+    const excelContent = lines.join('\n');
+    const blob = new Blob([excelContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Customer_Report_${new Date().toISOString().split('T')[0]}.xls`;
+    link.click();
+    
+    toast({
+      title: '📊 Report Downloaded',
+      description: 'Customer report saved as Excel file',
+    });
+  };
+
+  // Download customer report as PDF
+  const downloadCustomerReportPDF = () => {
+    const report = generateCustomerReport();
+    const doc = new jsPDF();
+    let yPosition = 20;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    const contentWidth = pageWidth - (margin * 2);
+    
+    // Helper function to add new page if needed
+    const checkNewPage = (requiredSpace: number) => {
+      if (yPosition + requiredSpace > 280) {
+        doc.addPage();
+        yPosition = 20;
+      }
+    };
+    
+    // Title
+    doc.setFillColor(99, 102, 241);
+    doc.rect(0, 0, pageWidth, 45, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Customer Analytics Report', pageWidth / 2, 25, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 38, { align: 'center' });
+    
+    yPosition = 60;
+    doc.setTextColor(0, 0, 0);
+    
+    // Executive Summary Section
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, yPosition - 5, contentWidth, 55, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, yPosition - 5, contentWidth, 55, 'S');
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('Executive Summary', margin + 5, yPosition + 5);
+    
+    yPosition += 15;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    
+    const summaryItems = [
+      [`Total Customers: ${report.summary.totalCustomers}`, `Active: ${report.summary.activeCustomers}`, `Inactive: ${report.summary.inactiveCustomers}`],
+      [`New This Month: ${report.summary.newCustomersThisMonth}`, `Conversion Rate: ${report.summary.conversionRate}%`, `Avg Appts/Customer: ${report.summary.averageAppointmentsPerCustomer}`],
+      [`Total Appointments: ${report.summary.totalAppointments}`, `Completed: ${report.summary.completedAppointments}`, `Pending: ${report.summary.pendingAppointments}`],
+    ];
+    
+    summaryItems.forEach(row => {
+      const colWidth = contentWidth / 3;
+      row.forEach((item, idx) => {
+        doc.text(item, margin + 5 + (colWidth * idx), yPosition);
+      });
+      yPosition += 10;
+    });
+    
+    yPosition += 20;
+    
+    // Source Breakdown
+    checkNewPage(60);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(99, 102, 241);
+    doc.text('Customer Source Analysis', margin, yPosition);
+    yPosition += 10;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 116, 139);
+    doc.text('Source', margin, yPosition);
+    doc.text('Count', margin + 80, yPosition);
+    doc.text('Percentage', margin + 120, yPosition);
+    yPosition += 2;
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, yPosition, margin + contentWidth, yPosition);
+    yPosition += 6;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    report.sourceBreakdown.forEach(item => {
+      checkNewPage(10);
+      doc.text(item.source, margin, yPosition);
+      doc.text(item.count.toString(), margin + 80, yPosition);
+      doc.text(`${item.percentage}%`, margin + 120, yPosition);
+      yPosition += 8;
+    });
+    
+    yPosition += 15;
+    
+    // Top Companies
+    if (report.topCompanies.length > 0) {
+      checkNewPage(60);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(99, 102, 241);
+      doc.text('Top Companies', margin, yPosition);
+      yPosition += 10;
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text('Company', margin, yPosition);
+      doc.text('Customers', margin + 80, yPosition);
+      doc.text('Share', margin + 120, yPosition);
+      yPosition += 2;
+      doc.line(margin, yPosition, margin + contentWidth, yPosition);
+      yPosition += 6;
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      report.topCompanies.forEach(item => {
+        checkNewPage(10);
+        doc.text(item.company.substring(0, 30), margin, yPosition);
+        doc.text(item.count.toString(), margin + 80, yPosition);
+        doc.text(`${item.percentage}%`, margin + 120, yPosition);
+        yPosition += 8;
+      });
+    }
+    
+    // Customer Details Table
+    doc.addPage();
+    yPosition = 20;
+    
+    doc.setFillColor(99, 102, 241);
+    doc.rect(0, 0, pageWidth, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Complete Customer List', pageWidth / 2, 18, { align: 'center' });
+    
+    yPosition = 45;
+    
+    // Table headers
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.setFillColor(71, 85, 105);
+    doc.rect(margin, yPosition - 5, contentWidth, 10, 'F');
+    
+    const headers = ['Name', 'Email', 'Phone', 'Company', 'Status', 'Appts'];
+    const colWidths = [35, 50, 30, 40, 20, 15];
+    let xPos = margin + 2;
+    headers.forEach((header, idx) => {
+      doc.text(header, xPos, yPosition);
+      xPos += colWidths[idx];
+    });
+    yPosition += 10;
+    
+    // Table rows
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(7);
+    
+    report.allCustomers.forEach((customer, idx) => {
+      checkNewPage(12);
+      
+      // Alternate row colors
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, yPosition - 4, contentWidth, 8, 'F');
+      }
+      
+      xPos = margin + 2;
+      doc.text(customer.name.substring(0, 18), xPos, yPosition);
+      xPos += colWidths[0];
+      doc.text(customer.email.substring(0, 25), xPos, yPosition);
+      xPos += colWidths[1];
+      doc.text(customer.phone.substring(0, 15), xPos, yPosition);
+      xPos += colWidths[2];
+      doc.text((customer.company || '').substring(0, 20), xPos, yPosition);
+      xPos += colWidths[3];
+      doc.text(customer.status, xPos, yPosition);
+      xPos += colWidths[4];
+      doc.text(customer.totalAppointments.toString(), xPos, yPosition);
+      
+      yPosition += 8;
+    });
+    
+    // Recommendations section
+    if (report.recommendations.length > 0) {
+      doc.addPage();
+      yPosition = 20;
+      
+      doc.setFillColor(245, 158, 11);
+      doc.rect(0, 0, pageWidth, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Recommendations', pageWidth / 2, 18, { align: 'center' });
+      
+      yPosition = 50;
+      doc.setTextColor(51, 65, 85);
+      doc.setFontSize(10);
+      
+      report.recommendations.forEach((rec, idx) => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${idx + 1}.`, margin, yPosition);
+        doc.setFont('helvetica', 'normal');
+        doc.text(rec as string, margin + 10, yPosition);
+        yPosition += 12;
+      });
+    }
+    
+    // Footer on last page
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, 290, { align: 'center' });
+    }
+    
+    doc.save(`Customer_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+    
+    toast({
+      title: '📊 Report Downloaded',
+      description: 'Customer report saved as PDF file',
+    });
+  };
 
   const handleAddLead = () => {
     if (!newLead.name || !newLead.email) {
@@ -1504,36 +2123,25 @@ export default function LeadsPage() {
       <div className="space-y-6">
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card className="border-slate-200 bg-gradient-to-br from-purple-50 to-white shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">Total Leads</CardTitle>
-              <TrendingUp className="h-4 w-4 text-purple-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-slate-900">{totalLeads}</div>
-              <p className="text-xs text-slate-500 mt-1">Potential customers</p>
-            </CardContent>
-          </Card>
-
           <Card className="border-slate-200 bg-gradient-to-br from-brand-50 to-white shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-slate-600">Total Customers</CardTitle>
               <Users className="h-4 w-4 text-brand-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-slate-900">{totalCustomers}</div>
+              <div className="text-2xl font-bold text-slate-900">{totalLeads}</div>
               <p className="text-xs text-slate-500 mt-1">Active customers</p>
             </CardContent>
           </Card>
 
           <Card className="border-slate-200 bg-gradient-to-br from-green-50 to-white shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">Active Leads</CardTitle>
+              <CardTitle className="text-sm font-medium text-slate-600">With Appointments</CardTitle>
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-slate-900">{activeLeads}</div>
-              <p className="text-xs text-slate-500 mt-1">With appointments</p>
+              <p className="text-xs text-slate-500 mt-1">Engaged customers</p>
             </CardContent>
           </Card>
 
@@ -1548,16 +2156,16 @@ export default function LeadsPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-slate-200 bg-gradient-to-br from-orange-50 to-white shadow-sm">
+          <Card className="border-slate-200 bg-gradient-to-br from-purple-50 to-white shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">Conversion Rate</CardTitle>
-              <TrendingUp className="h-4 w-4 text-orange-500" />
+              <CardTitle className="text-sm font-medium text-slate-600">Engagement Rate</CardTitle>
+              <TrendingUp className="h-4 w-4 text-purple-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-slate-900">
-                {totalLeads > 0 ? Math.round((totalCustomers / totalLeads) * 100) : 0}%
+                {totalLeads > 0 ? Math.round((activeLeads / totalLeads) * 100) : 0}%
               </div>
-              <p className="text-xs text-slate-500 mt-1">Leads to customers</p>
+              <p className="text-xs text-slate-500 mt-1">Customers with appointments</p>
             </CardContent>
           </Card>
         </div>
@@ -1565,32 +2173,65 @@ export default function LeadsPage() {
         {/* Header and Actions */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Leads & Customer Management</h1>
-            <p className="text-sm text-slate-600">Track leads, customers, and appointment history</p>
+            <h1 className="text-2xl font-bold text-slate-900">Customer Management</h1>
+            <p className="text-sm text-slate-600">Track customers and appointment history</p>
           </div>
 
           <div className="flex gap-2">
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="outline"
+                    className="border-purple-300 text-purple-700 hover:bg-purple-50"
+                  >
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Reports
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
+                    Select Report Period
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => { setReportPeriod('today'); setIsReportsDialogOpen(true); }}>
+                    <Clock className="h-4 w-4 mr-2 text-blue-500" />
+                    Today's Report
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setReportPeriod('week'); setIsReportsDialogOpen(true); }}>
+                    <Calendar className="h-4 w-4 mr-2 text-green-500" />
+                    Weekly Report
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setReportPeriod('month'); setIsReportsDialogOpen(true); }}>
+                    <CalendarDays className="h-4 w-4 mr-2 text-purple-500" />
+                    Monthly Report
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => { setReportPeriod('year'); setIsReportsDialogOpen(true); }}>
+                    <TrendingUp className="h-4 w-4 mr-2 text-orange-500" />
+                    Yearly Report
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => { setReportPeriod('custom'); setIsReportsDialogOpen(true); }}>
+                    <Filter className="h-4 w-4 mr-2 text-indigo-500" />
+                    Custom Date Range
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </motion.div>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button 
-                onClick={() => setIsBulkLeadDialogOpen(true)}
-                className="bg-amber-600 hover:bg-amber-700"
+                onClick={() => setIsBulkImportOpen(true)}
+                variant="outline"
+                className="border-green-300 text-green-700 hover:bg-green-50"
               >
-                <Users className="mr-2 h-4 w-4" />
-                Bulk Leads
+                <Upload className="mr-2 h-4 w-4" />
+                Import Bulk
               </Button>
             </motion.div>
             <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
               <Button 
                 onClick={() => setIsAddDialogOpen(true)}
-                className="bg-purple-600 hover:bg-purple-700"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Lead
-              </Button>
-            </motion.div>
-            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-              <Button 
-                onClick={() => setIsAddCustomerDialogOpen(true)}
                 className="bg-brand-600 hover:bg-brand-700"
               >
                 <Plus className="mr-2 h-4 w-4" />
@@ -1600,77 +2241,48 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {/* Tabs for Leads and Customers */}
-        <Tabs defaultValue="leads" className="w-full" onValueChange={(value) => setActiveTab(value as 'leads' | 'customers')}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="leads" className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Leads ({totalLeads})
-            </TabsTrigger>
-            <TabsTrigger value="customers" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Customers ({totalCustomers})
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Search and Filter */}
-          <Card className="border-slate-200 bg-white shadow-sm mt-4">
-            <CardContent className="pt-6">
-              <div className="flex flex-col gap-4 sm:flex-row">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    placeholder={activeTab === 'leads' ? "Search leads by name, email, company..." : "Search customers by name, email, city..."}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-                {activeTab === 'leads' && (
-                  <>
-                    <Select value={filterSource} onValueChange={setFilterSource}>
-                      <SelectTrigger className="w-full sm:w-[200px]">
-                        <Filter className="mr-2 h-4 w-4" />
-                        <SelectValue placeholder="Filter by source" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Sources</SelectItem>
-                        <SelectItem value="linkedin">LinkedIn</SelectItem>
-                        <SelectItem value="website">Website</SelectItem>
-                        <SelectItem value="referral">Referral</SelectItem>
-                        <SelectItem value="email">Email Campaign</SelectItem>
-                        <SelectItem value="phone">Phone</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      onClick={exportLeadsToCSV}
-                      variant="outline"
-                      className="border-green-300 text-green-700 hover:bg-green-50"
-                      disabled={filteredLeads.length === 0}
-                    >
-                      <FileSpreadsheet className="mr-2 h-4 w-4" />
-                      Export CSV
-                    </Button>
-                  </>
-                )}
-                {activeTab === 'customers' && (
-                  <Button
-                    onClick={exportCustomersToCSV}
-                    variant="outline"
-                    className="border-green-300 text-green-700 hover:bg-green-50"
-                    disabled={filteredCustomers.length === 0}
-                  >
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                    Export CSV
-                  </Button>
-                )}
+        {/* Search and Filter */}
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="pt-6">
+            <div className="flex flex-col gap-4 sm:flex-row">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  placeholder="Search customers by name, email, company..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
               </div>
-            </CardContent>
-          </Card>
+              <Select value={filterSource} onValueChange={setFilterSource}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <Filter className="mr-2 h-4 w-4" />
+                  <SelectValue placeholder="Filter by source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="linkedin">LinkedIn</SelectItem>
+                  <SelectItem value="website">Website</SelectItem>
+                  <SelectItem value="referral">Referral</SelectItem>
+                  <SelectItem value="email">Email Campaign</SelectItem>
+                  <SelectItem value="phone">Phone</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={exportLeadsToCSV}
+                variant="outline"
+                className="border-green-300 text-green-700 hover:bg-green-50"
+                disabled={filteredLeads.length === 0}
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-          {/* Leads Table */}
-          <TabsContent value="leads">
-            <Card className="border-slate-200 bg-white shadow-sm">
+        {/* Customers Table */}
+        <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="p-0">
             {filteredLeads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12">
@@ -1853,7 +2465,7 @@ export default function LeadsPage() {
                                   onClick={() => handleEditLead(lead)}
                                 >
                                   <Edit className="mr-2 h-4 w-4" />
-                                  Edit Lead
+                                  Edit Customer
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => {
@@ -1899,187 +2511,528 @@ export default function LeadsPage() {
             )}
           </CardContent>
         </Card>
-      </TabsContent>
-
-      {/* Customers Table */}
-      <TabsContent value="customers">
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardContent className="p-0">
-            {filteredCustomers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <Users className="h-12 w-12 text-slate-300" />
-                <h3 className="mt-4 text-lg font-semibold text-slate-900">No customers found</h3>
-                <p className="mt-2 text-sm text-slate-600">
-                  {searchQuery 
-                    ? 'Try adjusting your search' 
-                    : 'Get started by adding your first customer'}
-                </p>
-              </div>
-            ) : (
-              <div className="w-full overflow-x-auto">
-                <table className="w-full min-w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[20%]">
-                        Customer
-                      </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[20%]">
-                        Contact
-                      </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[15%]">
-                        Location
-                      </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[12%]">
-                        Status
-                      </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[15%]">
-                        Business Value
-                      </th>
-                      <th className="px-4 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider w-[10%]">
-                        Joined
-                      </th>
-                      <th className="px-4 py-4 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider w-[8%]">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredCustomers.map((customer, index) => (
-                      <motion.tr 
-                        key={customer.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, delay: index * 0.05 }}
-                        className="hover:bg-slate-50 transition-colors"
-                      >
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-10 w-10 border-2 border-brand-200">
-                              <AvatarFallback className="bg-gradient-to-br from-brand-400 to-brand-600 text-white font-semibold">
-                                {getInitials(customer.name)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="font-semibold text-slate-900">{customer.name}</div>
-                              <div className="text-sm text-slate-500">ID: {customer.id}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 text-sm text-slate-600">
-                              <Mail className="h-4 w-4 text-slate-400" />
-                              {customer.email}
-                            </div>
-                            {customer.phone && (
-                              <div className="flex items-center gap-2 text-sm text-slate-600">
-                                <Phone className="h-4 w-4 text-slate-400" />
-                                {customer.phone}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-sm text-slate-700">
-                            {customer.city || 'N/A'}
-                          </div>
-                          {customer.address && (
-                            <div className="text-xs text-slate-500 truncate max-w-[150px]">
-                              {customer.address}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-4">
-                          <Badge 
-                            variant="outline" 
-                            className={customer.status === 'active' 
-                              ? "bg-green-50 text-green-700 border-green-200" 
-                              : "bg-slate-100 text-slate-600 border-slate-200"}
-                          >
-                            {customer.status}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="font-semibold text-green-600">
-                            ${customer.businessValue.toFixed(2)}
-                          </div>
-                          {customer.services && customer.services.length > 0 && (
-                            <div className="text-xs text-slate-500">
-                              {customer.services.length} service{customer.services.length > 1 ? 's' : ''}
-                            </div>
-                          )}
-                          {customer.items && customer.items.length > 0 && (
-                            <div className="text-xs text-slate-500">
-                              {customer.items.length} item{customer.items.length > 1 ? 's' : ''}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-sm text-slate-700">
-                            {new Date(customer.createdAt).toLocaleDateString()}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => {
-                                  setSelectedCustomer(customer);
-                                  setIsViewCustomerDialogOpen(true);
-                                }}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => handleEditCustomer(customer)}
-                                >
-                                  <Edit className="mr-2 h-4 w-4" />
-                                  Edit Customer
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    window.location.href = `mailto:${customer.email}`;
-                                  }}
-                                >
-                                  <Mail className="mr-2 h-4 w-4" />
-                                  Send Email
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    if (window.confirm(`Are you sure you want to delete ${customer.name}?`)) {
-                                      handleDeleteCustomer(customer.id);
-                                    }
-                                  }}
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Delete Customer
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </td>
-                      </motion.tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </TabsContent>
-    </Tabs>
       </div>
 
-      {/* Add Lead Dialog */}
+      {/* Customer Reports Dialog */}
+      <Dialog open={isReportsDialogOpen} onOpenChange={setIsReportsDialogOpen}>
+        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <BarChart3 className="text-white" size={24} />
+              </div>
+              Customer Analytics Report
+            </DialogTitle>
+            <DialogDescription className="flex items-center justify-between">
+              <span>Comprehensive overview of your customer data with insights and analytics</span>
+              <span className="text-xs font-medium bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
+                {reportPeriod === 'today' ? '📅 Today' :
+                 reportPeriod === 'week' ? '📆 Last 7 Days' :
+                 reportPeriod === 'month' ? '🗓️ Last 30 Days' :
+                 reportPeriod === 'year' ? '📊 Last 12 Months' :
+                 `📌 ${customReportDates.from || 'Start'} - ${customReportDates.to || 'End'}`}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Custom Date Range Picker */}
+          {reportPeriod === 'custom' && (
+            <div className="bg-purple-50 rounded-xl p-4 border border-purple-200 mb-4">
+              <h4 className="text-sm font-semibold text-purple-800 mb-3 flex items-center gap-2">
+                <CalendarDays className="h-4 w-4" />
+                Custom Date Range
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs text-purple-600">From Date</Label>
+                  <Input
+                    type="date"
+                    value={customReportDates.from}
+                    onChange={(e) => setCustomReportDates({ ...customReportDates, from: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-purple-600">To Date</Label>
+                  <Input
+                    type="date"
+                    value={customReportDates.to}
+                    onChange={(e) => setCustomReportDates({ ...customReportDates, to: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(() => {
+            const report = generateCustomerReport();
+            return (
+              <div className="space-y-6 py-4">
+                {/* Executive Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Users className="h-8 w-8 opacity-80" />
+                      <span className="text-3xl font-bold">{report.summary.totalCustomers}</span>
+                    </div>
+                    <p className="text-sm mt-2 opacity-90">Total Customers</p>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl p-4 text-white shadow-lg"
+                  >
+                    <div className="flex items-center justify-between">
+                      <CheckCircle2 className="h-8 w-8 opacity-80" />
+                      <span className="text-3xl font-bold">{report.summary.activeCustomers}</span>
+                    </div>
+                    <p className="text-sm mt-2 opacity-90">Active Customers</p>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl p-4 text-white shadow-lg"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Calendar className="h-8 w-8 opacity-80" />
+                      <span className="text-3xl font-bold">{report.summary.totalAppointments}</span>
+                    </div>
+                    <p className="text-sm mt-2 opacity-90">Total Appointments</p>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}
+                    className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg"
+                  >
+                    <div className="flex items-center justify-between">
+                      <TrendingUp className="h-8 w-8 opacity-80" />
+                      <span className="text-3xl font-bold">{report.summary.conversionRate}%</span>
+                    </div>
+                    <p className="text-sm mt-2 opacity-90">Conversion Rate</p>
+                  </motion.div>
+                </div>
+
+                {/* Additional Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <div className="flex items-center gap-2 text-slate-600 mb-1">
+                      <ArrowUpRight className="h-4 w-4 text-green-500" />
+                      <span className="text-sm font-medium">New This Month</span>
+                    </div>
+                    <span className="text-2xl font-bold text-slate-900">{report.summary.newCustomersThisMonth}</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <div className="flex items-center gap-2 text-slate-600 mb-1">
+                      <XCircle className="h-4 w-4 text-red-500" />
+                      <span className="text-sm font-medium">Inactive</span>
+                    </div>
+                    <span className="text-2xl font-bold text-slate-900">{report.summary.inactiveCustomers}</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <div className="flex items-center gap-2 text-slate-600 mb-1">
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <span className="text-sm font-medium">Completed Appts</span>
+                    </div>
+                    <span className="text-2xl font-bold text-slate-900">{report.summary.completedAppointments}</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <div className="flex items-center gap-2 text-slate-600 mb-1">
+                      <Activity className="h-4 w-4 text-blue-500" />
+                      <span className="text-sm font-medium">Avg Appts/Customer</span>
+                    </div>
+                    <span className="text-2xl font-bold text-slate-900">{report.summary.averageAppointmentsPerCustomer}</span>
+                  </div>
+                </div>
+
+                {/* Source Breakdown & Top Companies */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Source Breakdown */}
+                  <div className="bg-white rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <PieChart className="h-5 w-5 text-purple-600" />
+                      <h3 className="font-semibold text-slate-900">Customer Sources</h3>
+                    </div>
+                    <div className="space-y-3">
+                      {report.sourceBreakdown.length > 0 ? (
+                        report.sourceBreakdown.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'][idx % 6] }}
+                              />
+                              <span className="text-sm text-slate-700">{item.source}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-slate-900">{item.count}</span>
+                              <span className="text-xs text-slate-500">({item.percentage}%)</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-500 text-center py-4">No source data available</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Top Companies */}
+                  <div className="bg-white rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Building2 className="h-5 w-5 text-blue-600" />
+                      <h3 className="font-semibold text-slate-900">Top Companies</h3>
+                    </div>
+                    <div className="space-y-3">
+                      {report.topCompanies.length > 0 ? (
+                        report.topCompanies.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
+                                {idx + 1}
+                              </div>
+                              <span className="text-sm text-slate-700 truncate max-w-[150px]">{item.company}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-slate-900">{item.count}</span>
+                              <span className="text-xs text-slate-500">({item.percentage}%)</span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-500 text-center py-4">No company data available</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Customer List Preview */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-4 py-3 border-b border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-5 w-5 text-slate-600" />
+                        <h3 className="font-semibold text-slate-900">Customer Details</h3>
+                      </div>
+                      <span className="text-sm text-slate-500">{report.allCustomers.length} customers</span>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Name</th>
+                          <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Email</th>
+                          <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Company</th>
+                          <th className="text-left text-xs font-semibold text-slate-600 px-4 py-3">Source</th>
+                          <th className="text-center text-xs font-semibold text-slate-600 px-4 py-3">Status</th>
+                          <th className="text-center text-xs font-semibold text-slate-600 px-4 py-3">Appointments</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.allCustomers.slice(0, 10).map((customer, idx) => (
+                          <tr key={idx} className="border-t border-slate-100 hover:bg-slate-50">
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
+                                  {customer.name.charAt(0).toUpperCase()}
+                                </div>
+                                <span className="text-sm font-medium text-slate-900">{customer.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-600">{customer.email}</td>
+                            <td className="px-4 py-3 text-sm text-slate-600">{customer.company || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-slate-600">{customer.source || '-'}</td>
+                            <td className="px-4 py-3 text-center">
+                              <Badge 
+                                className={customer.status === 'Active' 
+                                  ? 'bg-green-100 text-green-700 hover:bg-green-100' 
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-100'
+                                }
+                              >
+                                {customer.status}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="text-sm font-medium text-slate-900">{customer.totalAppointments}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {report.allCustomers.length > 10 && (
+                      <div className="bg-slate-50 px-4 py-3 text-center border-t border-slate-100">
+                        <span className="text-sm text-slate-500">
+                          +{report.allCustomers.length - 10} more customers (download report for full list)
+                        </span>
+                      </div>
+                    )}
+                    {report.allCustomers.length === 0 && (
+                      <div className="px-4 py-8 text-center">
+                        <Users className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                        <p className="text-sm text-slate-500">No customers found</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Recommendations */}
+                {report.recommendations.length > 0 && (
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Target className="h-5 w-5 text-amber-600" />
+                      <h3 className="font-semibold text-amber-900">Recommendations</h3>
+                    </div>
+                    <ul className="space-y-2">
+                      {report.recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm text-amber-800">
+                          <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                          {rec}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Download Options */}
+                <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Download className="h-5 w-5 text-slate-600" />
+                    <h3 className="font-semibold text-slate-900">Download Report</h3>
+                  </div>
+                  <p className="text-sm text-slate-600 mb-4">
+                    Export the complete customer report in your preferred format
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                      <Button
+                        onClick={downloadCustomerReportCSV}
+                        className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md"
+                      >
+                        <FileSpreadsheet className="mr-2 h-4 w-4" />
+                        Download CSV
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                      <Button
+                        onClick={downloadCustomerReportExcel}
+                        className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-md"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Download Excel
+                      </Button>
+                    </motion.div>
+                    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                      <Button
+                        onClick={downloadCustomerReportPDF}
+                        className="w-full bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-md"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Download PDF
+                      </Button>
+                    </motion.div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          <DialogFooter className="pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setIsReportsDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Import Dialog */}
+      <Dialog open={isBulkImportOpen} onOpenChange={setIsBulkImportOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                <Upload className="text-white" size={24} />
+              </div>
+              Import Bulk Customers
+            </DialogTitle>
+            <DialogDescription>
+              Upload a CSV file with customer data for bulk import
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Step 1: Download Template */}
+            <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
+                  1
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-slate-900 mb-3">📥 Download CSV Template</h3>
+                  <p className="text-sm text-slate-600 mb-4">
+                    Get our ready-to-use template with sample customer data. Just fill in your data!
+                  </p>
+                  <div className="bg-white/80 rounded-xl p-3 mb-4 border border-blue-100">
+                    <p className="text-xs text-blue-700 font-medium">💡 Pro Tip: In Excel, select header row → Home → Fill Color → Green for attractive table look!</p>
+                  </div>
+                  <Button 
+                    onClick={downloadCustomerCSVTemplate}
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 gap-2 shadow-md"
+                  >
+                    <FileSpreadsheet size={18} />
+                    Download Template
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2: Fill Template */}
+            <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 border-2 border-amber-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
+                  2
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-slate-900 mb-3">✏️ Fill in Your Customers</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+                    <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm">
+                      <span className="text-2xl block mb-1">👤</span>
+                      <span className="font-bold text-slate-800">Name</span>
+                      <p className="text-slate-500 text-xs mt-1">e.g., John Smith</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm">
+                      <span className="text-2xl block mb-1">📧</span>
+                      <span className="font-bold text-slate-800">Email</span>
+                      <p className="text-slate-500 text-xs mt-1">e.g., john@email.com</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm">
+                      <span className="text-2xl block mb-1">📱</span>
+                      <span className="font-bold text-slate-800">Phone</span>
+                      <p className="text-slate-500 text-xs mt-1">e.g., 9876543210</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm">
+                      <span className="text-2xl block mb-1">🏢</span>
+                      <span className="font-bold text-slate-800">Company</span>
+                      <p className="text-slate-500 text-xs mt-1">e.g., Tech Corp</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm">
+                      <span className="text-2xl block mb-1">📍</span>
+                      <span className="font-bold text-slate-800">Source</span>
+                      <p className="text-slate-500 text-xs mt-1">e.g., Referral</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm">
+                      <span className="text-2xl block mb-1">📝</span>
+                      <span className="font-bold text-slate-800">Notes</span>
+                      <p className="text-slate-500 text-xs mt-1">Any details</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Upload */}
+            <div className="bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 border-2 border-emerald-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
+                  3
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-slate-900 mb-3">📤 Upload Your CSV</h3>
+                  <div className="border-2 border-dashed border-emerald-300 rounded-xl p-6 text-center hover:border-emerald-500 transition-colors bg-white">
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setCsvFile(file);
+                          parseCustomerCSV(file);
+                        }
+                      }}
+                      className="hidden"
+                      id="csv-upload"
+                    />
+                    <label htmlFor="csv-upload" className="cursor-pointer">
+                      <Upload className="mx-auto h-10 w-10 text-emerald-400 mb-2" />
+                      <p className="text-sm font-medium text-slate-700">
+                        {csvFile ? csvFile.name : 'Click to upload or drag & drop'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">CSV files only</p>
+                    </label>
+                  </div>
+
+                  {importedData.length > 0 && (
+                    <div className="mt-4">
+                      <div className="flex items-center gap-2 text-emerald-700 mb-2">
+                        <CheckCircle2 size={18} />
+                        <span className="font-medium">{importedData.length} customers ready to import</span>
+                      </div>
+                      <div className="bg-white rounded-lg overflow-hidden border border-emerald-200">
+                        <div className="grid grid-cols-3 gap-2 p-2 bg-emerald-500 text-white text-xs font-bold">
+                          <span>Name</span>
+                          <span>Email</span>
+                          <span>Company</span>
+                        </div>
+                        <div className="max-h-32 overflow-y-auto">
+                          {importedData.slice(0, 5).map((row, idx) => (
+                            <div key={idx} className="grid grid-cols-3 gap-2 p-2 text-xs border-b border-emerald-100 last:border-0 hover:bg-emerald-50">
+                              <span className="font-medium text-slate-800 truncate">{row['Customer Name']}</span>
+                              <span className="text-slate-600 truncate">{row['Email']}</span>
+                              <span className="text-slate-600 truncate">{row['Company']}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {importedData.length > 5 && (
+                          <p className="text-xs text-center py-2 text-slate-500 bg-slate-50">
+                            +{importedData.length - 5} more customers
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsBulkImportOpen(false);
+                setCsvFile(null);
+                setImportedData([]);
+              }}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={processBulkImport}
+              disabled={importedData.length === 0}
+              className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-700 hover:via-green-700 hover:to-teal-700 shadow-lg gap-2 text-base py-5"
+            >
+              <Users size={20} />
+              Import {importedData.length} Customers
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Customer Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -2095,7 +3048,7 @@ export default function LeadsPage() {
                 >
                   <User className="h-6 w-6 text-brand-600" />
                 </motion.div>
-                Add New Lead
+                Add New Customer
               </DialogTitle>
               <DialogDescription>
                 Create a comprehensive customer profile with all relevant details
@@ -2125,7 +3078,7 @@ export default function LeadsPage() {
                     <SelectValue placeholder="Non selected" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="new">New Lead</SelectItem>
+                    <SelectItem value="new">New Customer</SelectItem>
                     <SelectItem value="contacted">Contacted</SelectItem>
                     <SelectItem value="qualified">Qualified</SelectItem>
                     <SelectItem value="negotiation">In Negotiation</SelectItem>
@@ -3174,7 +4127,7 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Lead Dialog */}
+      {/* Edit Customer Dialog */}
       <Dialog open={isEditLeadDialogOpen} onOpenChange={setIsEditLeadDialogOpen}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           {editingLead && (
@@ -3182,10 +4135,10 @@ export default function LeadsPage() {
               <DialogHeader>
                 <DialogTitle className="text-2xl flex items-center gap-2">
                   <Edit className="h-6 w-6 text-purple-600" />
-                  Edit Lead
+                  Edit Customer
                 </DialogTitle>
                 <DialogDescription>
-                  Update lead information
+                  Update customer information
                 </DialogDescription>
               </DialogHeader>
               
@@ -3703,7 +4656,7 @@ export default function LeadsPage() {
                               }}
                             >
                               <Edit className="mr-2 h-4 w-4" />
-                              Edit Lead Details
+                              Edit Customer Details
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {

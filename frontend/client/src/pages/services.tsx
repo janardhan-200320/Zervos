@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Edit, Trash2, Clock, DollarSign, Tag, MoreVertical, Sparkles, Search, Link2, Copy, Check, Upload, FileSpreadsheet, ShoppingCart } from 'lucide-react';
+import { Plus, Edit, Trash2, Clock, DollarSign, Tag, MoreVertical, Sparkles, Search, Link2, Copy, Check, Upload, FileSpreadsheet, ShoppingCart, FileText, Download, BarChart3, TrendingUp, Users, Calendar, Eye, X, PieChart, Package2, CalendarDays, Filter, ChevronDown } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import {
   Dialog,
   DialogContent,
@@ -82,6 +83,9 @@ export default function ServicesPage() {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importedData, setImportedData] = useState<any[]>([]);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
@@ -97,7 +101,345 @@ export default function ServicesPage() {
     category: '',
   });
 
-  const categories = ['Spa & Wellness', 'Beauty & Salon', 'Fitness & Training', 'Consultation', 'Treatment', 'Workshop', 'Other'];
+  const defaultCategories = ['Spa & Wellness', 'Beauty & Salon', 'Fitness & Training', 'Consultation', 'Treatment', 'Workshop', 'Other'];
+  
+  // Combine default and custom categories
+  const categories = [...defaultCategories, ...customCategories];
+
+  // Load custom categories from localStorage
+  useEffect(() => {
+    const savedCategories = localStorage.getItem('zervos_custom_service_categories');
+    if (savedCategories) {
+      setCustomCategories(JSON.parse(savedCategories));
+    }
+  }, []);
+
+  // Save custom category
+  const addCustomCategory = () => {
+    if (customCategoryName.trim() && !categories.includes(customCategoryName.trim())) {
+      const newCategories = [...customCategories, customCategoryName.trim()];
+      setCustomCategories(newCategories);
+      localStorage.setItem('zervos_custom_service_categories', JSON.stringify(newCategories));
+      setFormData({ ...formData, category: customCategoryName.trim() });
+      setCustomCategoryName('');
+      setIsCustomCategory(false);
+      toast({
+        title: '✅ Category Added',
+        description: `"${customCategoryName.trim()}" has been added to categories`,
+      });
+    }
+  };
+
+  // Reports state
+  const [isReportsOpen, setIsReportsOpen] = useState(false);
+  const [servicesReportPeriod, setServicesReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('month');
+  const [customServicesReportDates, setCustomServicesReportDates] = useState({ from: '', to: '' });
+
+  // Get filtered services based on report period
+  const getFilteredServicesByPeriod = () => {
+    const now = new Date();
+    let startDate: Date;
+    let endDate = new Date(now);
+    endDate.setHours(23, 59, 59, 999);
+
+    switch (servicesReportPeriod) {
+      case 'today':
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'week':
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'month':
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'year':
+        startDate = new Date(now);
+        startDate.setFullYear(now.getFullYear() - 1);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'custom':
+        startDate = customServicesReportDates.from ? new Date(customServicesReportDates.from) : new Date(now);
+        endDate = customServicesReportDates.to ? new Date(customServicesReportDates.to) : new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
+        break;
+      default:
+        startDate = new Date(now);
+        startDate.setMonth(now.getMonth() - 1);
+    }
+
+    return services.filter(service => {
+      const createdDate = new Date(service.createdAt);
+      return createdDate >= startDate && createdDate <= endDate;
+    });
+  };
+
+  // Generate Services Report Data
+  const generateServicesReport = () => {
+    const filtered = getFilteredServicesByPeriod();
+    const periodLabel = servicesReportPeriod === 'today' ? 'Today' :
+                        servicesReportPeriod === 'week' ? 'Last 7 Days' :
+                        servicesReportPeriod === 'month' ? 'Last 30 Days' :
+                        servicesReportPeriod === 'year' ? 'Last 12 Months' :
+                        `${customServicesReportDates.from} to ${customServicesReportDates.to}`;
+    
+    const totalServices = filtered.length;
+    const enabledServices = filtered.filter(s => s.isEnabled).length;
+    const disabledServices = filtered.filter(s => !s.isEnabled).length;
+    const packageServices = filtered.filter(s => s.category === 'Package');
+    
+    // Category breakdown as array
+    const categoryMap: Record<string, { count: number; totalRevenue: number }> = {};
+    filtered.forEach(s => {
+      if (!categoryMap[s.category]) {
+        categoryMap[s.category] = { count: 0, totalRevenue: 0 };
+      }
+      categoryMap[s.category].count++;
+      categoryMap[s.category].totalRevenue += parseFloat(s.price) || 0;
+    });
+    
+    const categoryBreakdown = Object.entries(categoryMap).map(([name, data]) => ({
+      name,
+      count: data.count,
+      totalRevenue: data.totalRevenue,
+      percentage: totalServices > 0 ? Math.round((data.count / totalServices) * 100) : 0
+    }));
+
+    // Price analysis
+    const prices = filtered.map(s => parseFloat(s.price) || 0);
+    const totalRevenue = prices.reduce((a, b) => a + b, 0);
+    const averagePrice = totalServices > 0 ? Math.round(totalRevenue / totalServices) : 0;
+    const highestPrice = prices.length > 0 ? Math.max(...prices) : 0;
+    const validPrices = prices.filter(p => p > 0);
+    const lowestPrice = validPrices.length > 0 ? Math.min(...validPrices) : 0;
+
+    // Duration analysis
+    const durations = filtered.map(s => parseInt(s.duration) || 0);
+    const averageDuration = totalServices > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / totalServices) : 0;
+
+    // Package services formatted
+    const packages = packageServices.map(s => ({
+      name: s.name,
+      category: s.category,
+      price: parseFloat(s.price) || 0,
+      discount: 10 // Default discount for packages
+    }));
+
+    // All services formatted
+    const allServices = filtered.map(s => ({
+      name: s.name,
+      category: s.category,
+      price: parseFloat(s.price) || 0,
+      duration: parseInt(s.duration) || 0,
+      enabled: s.isEnabled
+    }));
+
+    // Recommendations
+    const recommendations: string[] = [];
+    if (disabledServices > totalServices * 0.3 && totalServices > 0) {
+      recommendations.push(`Consider enabling ${disabledServices} disabled services to increase offerings`);
+    }
+    if (highestPrice > averagePrice * 3 && averagePrice > 0) {
+      recommendations.push(`You have premium services priced significantly higher than average - consider marketing them`);
+    }
+    if (categoryBreakdown.length < 3) {
+      recommendations.push(`Add more service categories to diversify your offerings`);
+    }
+
+    return {
+      period: periodLabel,
+      summary: {
+        totalServices,
+        enabledServices,
+        disabledServices,
+        totalRevenue,
+        averagePrice,
+        highestPrice,
+        lowestPrice,
+        averageDuration
+      },
+      categoryBreakdown,
+      packages,
+      allServices,
+      recommendations
+    };
+  };
+
+  // Download Services Report as CSV
+  const downloadServicesCSV = () => {
+    const report = generateServicesReport();
+    let csvContent = 'SERVICES REPORT\n';
+    csvContent += `Generated on: ${new Date().toLocaleDateString('en-IN')} at ${new Date().toLocaleTimeString('en-IN')}\n\n`;
+    
+    // Summary Section
+    csvContent += 'SUMMARY\n';
+    csvContent += `Total Services,${report.summary.totalServices}\n`;
+    csvContent += `Active Services,${report.summary.enabledServices}\n`;
+    csvContent += `Inactive Services,${report.summary.disabledServices}\n`;
+    csvContent += `Total Revenue Potential,₹${report.summary.totalRevenue.toLocaleString('en-IN')}\n`;
+    csvContent += `Average Price,₹${report.summary.averagePrice}\n`;
+    csvContent += `Highest Price,₹${report.summary.highestPrice.toLocaleString('en-IN')}\n`;
+    csvContent += `Lowest Price,₹${report.summary.lowestPrice.toLocaleString('en-IN')}\n`;
+    csvContent += `Average Duration,${report.summary.averageDuration} mins\n\n`;
+
+    // Category Breakdown
+    csvContent += 'CATEGORY BREAKDOWN\n';
+    csvContent += 'Category,Count,Total Value,Percentage\n';
+    report.categoryBreakdown.forEach(cat => {
+      csvContent += `${cat.name},${cat.count},₹${cat.totalRevenue.toLocaleString('en-IN')},${cat.percentage}%\n`;
+    });
+    csvContent += '\n';
+
+    // Services List
+    csvContent += 'DETAILED SERVICES LIST\n';
+    csvContent += 'Service Name,Category,Price (₹),Duration,Status\n';
+    report.allServices.forEach(s => {
+      csvContent += `"${s.name}","${s.category}",${s.price},"${s.duration} mins",${s.enabled ? 'Active' : 'Inactive'}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Services_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    toast({ title: '📥 CSV Downloaded', description: 'Services report has been downloaded' });
+  };
+
+  // Download Services Report as Excel (TSV format for Excel compatibility)
+  const downloadServicesExcel = () => {
+    const report = generateServicesReport();
+    let content = 'SERVICES REPORT\t\t\t\t\n';
+    content += `Generated on: ${new Date().toLocaleDateString('en-IN')} at ${new Date().toLocaleTimeString('en-IN')}\t\t\t\t\n\n`;
+    
+    content += 'SUMMARY\t\t\t\t\n';
+    content += `Metric\tValue\t\t\t\n`;
+    content += `Total Services\t${report.summary.totalServices}\t\t\t\n`;
+    content += `Active Services\t${report.summary.enabledServices}\t\t\t\n`;
+    content += `Inactive Services\t${report.summary.disabledServices}\t\t\t\n`;
+    content += `Total Revenue Potential\t₹${report.summary.totalRevenue.toLocaleString('en-IN')}\t\t\t\n`;
+    content += `Average Price\t₹${report.summary.averagePrice}\t\t\t\n`;
+    content += `Average Duration\t${report.summary.averageDuration} mins\t\t\t\n\n`;
+
+    content += 'CATEGORY BREAKDOWN\t\t\t\t\n';
+    content += 'Category\tCount\tTotal Value\tPercentage\t\n';
+    report.categoryBreakdown.forEach(cat => {
+      content += `${cat.name}\t${cat.count}\t₹${cat.totalRevenue.toLocaleString('en-IN')}\t${cat.percentage}%\t\n`;
+    });
+    content += '\n';
+
+    content += 'DETAILED SERVICES LIST\t\t\t\t\n';
+    content += 'Service Name\tCategory\tPrice (₹)\tDuration\tStatus\n';
+    report.allServices.forEach(s => {
+      content += `${s.name}\t${s.category}\t${s.price}\t${s.duration} mins\t${s.enabled ? 'Active' : 'Inactive'}\n`;
+    });
+
+    const blob = new Blob([content], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Services_Report_${new Date().toISOString().split('T')[0]}.xls`;
+    link.click();
+    toast({ title: '📥 Excel Downloaded', description: 'Services report has been downloaded' });
+  };
+
+  // Download Services Report as PDF (HTML-based printable)
+  const downloadServicesPDF = () => {
+    const report = generateServicesReport();
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Services Report</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #333; }
+          h1 { color: #7C3AED; border-bottom: 3px solid #7C3AED; padding-bottom: 10px; }
+          h2 { color: #4F46E5; margin-top: 30px; }
+          .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+          .summary-card { background: linear-gradient(135deg, #F3E8FF 0%, #E9D5FF 100%); padding: 20px; border-radius: 12px; text-align: center; }
+          .summary-card h3 { font-size: 24px; color: #7C3AED; margin: 0; }
+          .summary-card p { color: #6B7280; margin: 5px 0 0 0; font-size: 14px; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          th { background: linear-gradient(135deg, #7C3AED 0%, #4F46E5 100%); color: white; padding: 12px; text-align: left; }
+          td { padding: 10px 12px; border-bottom: 1px solid #E5E7EB; }
+          tr:nth-child(even) { background: #F9FAFB; }
+          .status-active { color: #059669; font-weight: 600; }
+          .status-inactive { color: #DC2626; font-weight: 600; }
+          .footer { margin-top: 40px; text-align: center; color: #9CA3AF; font-size: 12px; }
+          @media print { body { padding: 20px; } }
+        </style>
+      </head>
+      <body>
+        <h1>📊 Services Report</h1>
+        <p style="color: #6B7280;">Generated on ${new Date().toLocaleDateString('en-IN')} at ${new Date().toLocaleTimeString('en-IN')}</p>
+        
+        <div class="summary-grid">
+          <div class="summary-card">
+            <h3>${report.summary.totalServices}</h3>
+            <p>Total Services</p>
+          </div>
+          <div class="summary-card">
+            <h3>${report.summary.enabledServices}</h3>
+            <p>Active Services</p>
+          </div>
+          <div class="summary-card">
+            <h3>₹${report.summary.totalRevenue.toLocaleString('en-IN')}</h3>
+            <p>Revenue Potential</p>
+          </div>
+          <div class="summary-card">
+            <h3>₹${report.summary.averagePrice}</h3>
+            <p>Average Price</p>
+          </div>
+        </div>
+
+        <h2>📁 Category Breakdown</h2>
+        <table>
+          <thead>
+            <tr><th>Category</th><th>Count</th><th>Total Value</th><th>Percentage</th></tr>
+          </thead>
+          <tbody>
+            ${report.categoryBreakdown.map(cat => `
+              <tr><td>${cat.name}</td><td>${cat.count}</td><td>₹${cat.totalRevenue.toLocaleString('en-IN')}</td><td>${cat.percentage}%</td></tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <h2>📋 Detailed Services List</h2>
+        <table>
+          <thead>
+            <tr><th>Service Name</th><th>Category</th><th>Price</th><th>Duration</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            ${report.allServices.map(s => `
+              <tr>
+                <td><strong>${s.name}</strong></td>
+                <td>${s.category}</td>
+                <td>₹${s.price.toLocaleString('en-IN')}</td>
+                <td>${s.duration} mins</td>
+                <td class="${s.enabled ? 'status-active' : 'status-inactive'}">${s.enabled ? '✓ Active' : '✗ Inactive'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <p>Generated by Zervos Business Suite • ${new Date().getFullYear()}</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.print();
+    toast({ title: '📄 PDF Ready', description: 'Print dialog opened for PDF download' });
+  };
 
   // CSV Template Download Function
   const downloadCSVTemplate = () => {
@@ -113,38 +455,35 @@ export default function ServicesPage() {
       ['Swedish Massage', '2500', '60', 'Spa & Wellness', 'Relaxing full body massage'],
       ['Facial Treatment', '1500', '45', 'Beauty & Salon', 'Deep cleansing facial'],
       ['Haircut & Styling', '800', '30', 'Beauty & Salon', 'Professional haircut'],
-      ['', '', '', '', ''],
-      ['', '', '', '', ''],
-      ['', '', '', '', ''],
-      ['', '', '', '', ''],
-      ['', '', '', '', ''],
+      ['Deep Tissue Massage', '3500', '90', 'Spa & Wellness', 'Therapeutic deep massage'],
+      ['Manicure & Pedicure', '1200', '60', 'Beauty & Salon', 'Complete nail care'],
     ];
 
-    // Create clean CSV content with title, customer info, and services table
-    let csvContent = 'BULK SERVICES IMPORT\n';
-    csvContent += '\n';
-    csvContent += 'Customer Name,Customer Email,Customer Phone\n';
-    csvContent += 'John Doe,john@example.com,9876543210\n';
-    csvContent += '\n';
+    // Create styled CSV content - This is a clean CSV for Excel
+    let csvContent = '';
     csvContent += headers.join(',') + '\n';
     sampleData.forEach(row => {
       csvContent += row.join(',') + '\n';
     });
+    // Add empty rows for user to fill
+    for (let i = 0; i < 10; i++) {
+      csvContent += ',,,,' + '\n';
+    }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `Bulk_Services_Import_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Services_Bulk_Import_Template.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
     toast({
-      title: '📥 Template Downloaded',
-      description: 'Single customer bulk services template - Apply green fill to header row & set font size 28',
-      duration: 5000,
+      title: '📥 Template Downloaded!',
+      description: 'Open in Excel → Select header row → Apply bold & green background. Fill your services and upload!',
+      duration: 6000,
     });
   };
 
@@ -168,36 +507,24 @@ export default function ServicesPage() {
       }
 
       const data = [];
-      let customerInfo: any = null;
-      let serviceHeaderIndex = -1;
+      let headerIndex = -1;
 
-      // Find the service header row and customer info
+      // Find the service header row
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        const values = line.split(',').map(v => v.trim());
+        const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
         console.log(`Line ${i}:`, values);
         
-        // Check if this is customer info row
-        if (values[0] === 'Customer Name' && i + 1 < lines.length) {
-          const customerValues = lines[i + 1].split(',').map(v => v.trim());
-          customerInfo = {
-            'Customer Name': customerValues[0] || '',
-            'Customer Email': customerValues[1] || '',
-            'Customer Phone': customerValues[2] || ''
-          };
-          continue;
-        }
-        
-        // Check if this is the service header row
-        if (values[0] === 'Service Name' || values.some(v => v.toLowerCase().includes('service'))) {
-          serviceHeaderIndex = i;
+        // Check if this is the service header row (starts with Service Name)
+        if (values[0] === 'Service Name' || values[0].toLowerCase().includes('service name')) {
+          headerIndex = i;
           const headers = values;
           
           // Parse service rows
           for (let j = i + 1; j < lines.length; j++) {
-            const serviceValues = lines[j].split(',').map(v => v.trim());
+            const serviceValues = lines[j].split(',').map(v => v.trim().replace(/"/g, ''));
             if (serviceValues[0] && serviceValues[0] !== '') {
-              const row: any = customerInfo ? { ...customerInfo } : {};
+              const row: any = {};
               headers.forEach((header, index) => {
                 row[header] = serviceValues[index] || '';
               });
@@ -257,9 +584,9 @@ export default function ServicesPage() {
     }
   };
 
-  // Process and import CSV data
-  const processBulkImport = (directToPOS: boolean = false) => {
-    console.log('processBulkImport called with directToPOS:', directToPOS);
+  // Process and import CSV data - Always navigates to POS after import
+  const processBulkImport = () => {
+    console.log('processBulkImport called');
     console.log('importedData:', importedData);
     
     if (importedData.length === 0) {
@@ -272,20 +599,8 @@ export default function ServicesPage() {
     }
 
     const newServices: Service[] = [];
-    const errors: string[] = [];
 
-    // Extract customer info - it's in all rows now
-    let customerInfo = { name: '', email: '', phone: '' };
-    
-    if (importedData.length > 0 && importedData[0]['Customer Name']) {
-      customerInfo = {
-        name: importedData[0]['Customer Name'] || '',
-        email: importedData[0]['Customer Email'] || '',
-        phone: importedData[0]['Customer Phone'] || ''
-      };
-    }
-
-    // Process service rows (all rows have customer info, just check for Service Name)
+    // Process service rows
     importedData.forEach((row, index) => {
       // Validate required fields
       if (!row['Service Name'] || !row['Service Price (₹)']) {
@@ -301,7 +616,7 @@ export default function ServicesPage() {
         duration: `${duration} mins`,
         price: row['Service Price (₹)'],
         currency: 'INR',
-        description: row['Description/Notes'] || `Service for ${customerInfo.name || 'customer'}`,
+        description: row['Description/Notes'] || '',
         category: category,
         isEnabled: true,
         createdAt: new Date().toISOString(),
@@ -310,75 +625,36 @@ export default function ServicesPage() {
       newServices.push(newService);
     });
 
-    if (errors.length > 0) {
-      toast({
-        title: 'Import Errors',
-        description: errors.join(', '),
-        variant: 'destructive',
-      });
-    }
-
     if (newServices.length > 0) {
       saveServices([...services, ...newServices]);
       
-      if (directToPOS) {
-        // Extract customer info from first row
-        const custInfo = importedData.length > 0 ? {
-          name: importedData[0]['Customer Name'] || '',
-          email: importedData[0]['Customer Email'] || '',
-          phone: importedData[0]['Customer Phone'] || ''
-        } : { name: '', email: '', phone: '' };
+      // Store data for POS with prices in cents
+      const servicesForPOS = newServices.map(svc => ({
+        ...svc,
+        price: Math.round(parseFloat(svc.price) * 100) // Convert to cents
+      }));
 
-        console.log('Customer info:', custInfo);
-        console.log('New services before conversion:', newServices);
-
-        // Store data for POS with prices in cents
-        const servicesForPOS = newServices.map(svc => ({
-          ...svc,
-          price: Math.round(parseFloat(svc.price) * 100) // Convert to cents
-        }));
-
-        console.log('Services for POS (with cents):', servicesForPOS);
-
-        const bulkData = {
-          services: servicesForPOS,
-          customers: [custInfo]
-        };
-        
-        localStorage.setItem('bulk_import_data', JSON.stringify(bulkData));
-        console.log('Data stored in localStorage:', bulkData);
-        
-        // Verify storage
-        const verification = localStorage.getItem('bulk_import_data');
-        console.log('Verification - data in localStorage:', verification);
-        
-        // Close dialog first
-        setIsBulkImportOpen(false);
-        setCsvFile(null);
-        setImportedData([]);
-        
-        toast({
-          title: '✅ Services Imported',
-          description: `${newServices.length} services added. Redirecting to POS...`,
-        });
-        
-        // Small delay for toast, then navigate
-        setTimeout(() => {
-          console.log('Navigating to /pos-register');
-          setLocation('/pos-register');
-        }, 500);
-        
-        return; // Don't execute the rest
-      } else {
-        toast({
-          title: '✅ Import Successful',
-          description: `${newServices.length} services have been added to your catalog`,
-        });
-      }
+      const bulkData = {
+        services: servicesForPOS,
+        type: 'services'
+      };
       
+      localStorage.setItem('bulk_import_data', JSON.stringify(bulkData));
+      
+      // Close dialog first
       setIsBulkImportOpen(false);
       setCsvFile(null);
       setImportedData([]);
+      
+      toast({
+        title: '✅ Services Imported Successfully!',
+        description: `${newServices.length} services added. Opening POS for billing...`,
+      });
+      
+      // Navigate to POS
+      setTimeout(() => {
+        setLocation('/pos-register');
+      }, 500);
     }
   };
 
@@ -565,6 +841,37 @@ export default function ServicesPage() {
             </div>
           </div>
           <div className="flex gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50">
+                  <BarChart3 size={18} />
+                  Reports
+                  <ChevronDown size={14} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuItem onClick={() => { setServicesReportPeriod('today'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Today's Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setServicesReportPeriod('week'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Weekly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setServicesReportPeriod('month'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Monthly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setServicesReportPeriod('year'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Yearly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setServicesReportPeriod('custom'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Custom Range
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button onClick={() => setIsBulkImportOpen(true)} variant="outline" className="gap-2 border-green-300 text-green-700 hover:bg-green-50">
               <Upload size={18} />
               Import Bulk
@@ -901,16 +1208,56 @@ export default function ServicesPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
-                <Select value={formData.category} onValueChange={(val) => setFormData({ ...formData, category: val })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {!isCustomCategory ? (
+                  <Select 
+                    value={formData.category} 
+                    onValueChange={(val) => {
+                      if (val === '__custom__') {
+                        setIsCustomCategory(true);
+                      } else {
+                        setFormData({ ...formData, category: val });
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                      <SelectItem value="__custom__" className="text-purple-600 font-medium border-t mt-1 pt-2">
+                        <span className="flex items-center gap-2">
+                          <Plus size={14} /> Add Custom Category
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Enter custom category name"
+                      value={customCategoryName}
+                      onChange={(e) => setCustomCategoryName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addCustomCategory()}
+                      autoFocus
+                    />
+                    <Button type="button" onClick={addCustomCategory} size="sm" className="bg-purple-600 hover:bg-purple-700">
+                      Add
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setIsCustomCategory(false);
+                        setCustomCategoryName('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="barcode">Barcode (Optional)</Label>
@@ -1215,32 +1562,36 @@ export default function ServicesPage() {
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl">
-                  <Upload className="text-white" size={24} />
+                <div className="p-3 bg-gradient-to-br from-emerald-500 via-green-500 to-teal-600 rounded-2xl shadow-lg">
+                  <Upload className="text-white" size={28} />
                 </div>
-                Bulk Import Services
+                <div>
+                  <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                    Bulk Import Services
+                  </span>
+                  <p className="text-sm font-normal text-gray-500 mt-1">Quick & Easy CSV Import</p>
+                </div>
               </DialogTitle>
-              <DialogDescription className="text-base">
-                Import multiple services at once using our CSV template. Perfect for adding services for customers taking multiple treatments.
-              </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-6 py-6">
+            <div className="space-y-5 py-4">
               {/* Step 1: Download Template */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
+              <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-blue-600 text-white rounded-full font-bold text-lg flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
                     1
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Download CSV Template</h3>
-                    <p className="text-sm text-gray-700 mb-4">
-                      Get our professionally designed CSV template with sample data and instructions. 
-                      The template includes fields for customer details, service information, pricing, and more.
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">📥 Download CSV Template</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Get our ready-to-use template with sample data. Open in Excel and apply styling for professional look!
                     </p>
+                    <div className="bg-white/80 rounded-xl p-3 mb-4 border border-blue-100">
+                      <p className="text-xs text-blue-700 font-medium">💡 Pro Tip: In Excel, select header row → Home → Fill Color → Green for attractive table look!</p>
+                    </div>
                     <Button 
                       onClick={downloadCSVTemplate}
-                      className="bg-blue-600 hover:bg-blue-700 gap-2"
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 gap-2 shadow-md"
                     >
                       <FileSpreadsheet size={18} />
                       Download Template
@@ -1250,40 +1601,38 @@ export default function ServicesPage() {
               </div>
 
               {/* Step 2: Fill Template */}
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl p-6">
+              <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 border-2 border-amber-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-purple-600 text-white rounded-full font-bold text-lg flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
                     2
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Fill in Service Details</h3>
-                    <p className="text-sm text-gray-700 mb-3">
-                      Open the downloaded CSV in Excel or Google Sheets and fill in the following columns:
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📋 Customer Name</span>
-                        <p className="text-gray-600 text-xs mt-1">Full name of the customer</p>
+                    <h3 className="text-lg font-bold text-gray-900 mb-3">✏️ Fill in Your Services</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">💼</span>
+                        <span className="font-bold text-gray-800">Service Name</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., Swedish Massage</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📧 Email</span>
-                        <p className="text-gray-600 text-xs mt-1">Customer email address</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">💰</span>
+                        <span className="font-bold text-gray-800">Price (₹)</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., 2500</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📱 Phone</span>
-                        <p className="text-gray-600 text-xs mt-1">10-digit phone number</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">⏱️</span>
+                        <span className="font-bold text-gray-800">Duration</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., 60 (mins)</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">💼 Service Name</span>
-                        <p className="text-gray-600 text-xs mt-1">Name of the service</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">📁</span>
+                        <span className="font-bold text-gray-800">Category</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., Spa & Wellness</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">💰 Service Price</span>
-                        <p className="text-gray-600 text-xs mt-1">Price in rupees (₹)</p>
-                      </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">⏱️ Duration</span>
-                        <p className="text-gray-600 text-xs mt-1">Duration in minutes</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors col-span-2 sm:col-span-2">
+                        <span className="text-2xl block mb-1">📝</span>
+                        <span className="font-bold text-gray-800">Description</span>
+                        <p className="text-gray-500 text-xs mt-1">Brief description of the service</p>
                       </div>
                     </div>
                   </div>
@@ -1291,18 +1640,18 @@ export default function ServicesPage() {
               </div>
 
               {/* Step 3: Upload CSV */}
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-6">
+              <div className="bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 border-2 border-emerald-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-green-600 text-white rounded-full font-bold text-lg flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
                     3
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Upload Filled CSV</h3>
-                    <p className="text-sm text-gray-700 mb-4">
-                      Upload your completed CSV file. We'll validate and import all services automatically.
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">📤 Upload & Import to POS</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Upload your CSV and we'll automatically import services and open POS for billing!
                     </p>
                     
-                    <div className="border-2 border-dashed border-green-300 rounded-lg p-8 text-center bg-white hover:bg-green-50 transition-colors">
+                    <div className="border-3 border-dashed border-emerald-300 rounded-2xl p-6 text-center bg-white/80 hover:bg-emerald-50 transition-all cursor-pointer group">
                       <input
                         type="file"
                         accept=".csv"
@@ -1310,36 +1659,53 @@ export default function ServicesPage() {
                         className="hidden"
                         id="csv-upload"
                       />
-                      <label htmlFor="csv-upload" className="cursor-pointer">
-                        <Upload size={48} className="mx-auto text-green-600 mb-3" />
+                      <label htmlFor="csv-upload" className="cursor-pointer block">
+                        <div className="w-16 h-16 mx-auto mb-3 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <Upload size={32} className="text-emerald-600" />
+                        </div>
                         {csvFile ? (
                           <div>
-                            <p className="text-lg font-semibold text-green-700 mb-1">✅ {csvFile.name}</p>
-                            <p className="text-sm text-gray-600">Click to change file</p>
+                            <p className="text-lg font-bold text-emerald-700 mb-1">✅ {csvFile.name}</p>
+                            <p className="text-sm text-gray-500">Click to change file</p>
                           </div>
                         ) : (
                           <div>
-                            <p className="text-lg font-semibold text-gray-700 mb-1">Click to upload CSV</p>
-                            <p className="text-sm text-gray-500">or drag and drop your file here</p>
+                            <p className="text-lg font-bold text-gray-700 mb-1">Drop CSV here or Click to Upload</p>
+                            <p className="text-sm text-gray-500">Supports .csv files</p>
                           </div>
                         )}
                       </label>
                     </div>
 
                     {importedData.length > 0 && (
-                      <div className="mt-4 bg-green-100 border border-green-300 rounded-lg p-4">
-                        <p className="text-sm font-semibold text-green-800">
-                          ✅ Successfully parsed {importedData.length} service entries
-                        </p>
-                        <div className="mt-2 max-h-40 overflow-y-auto text-xs">
-                          {importedData.slice(0, 5).map((row, idx) => (
-                            <div key={idx} className="py-1 border-b border-green-200 last:border-0">
-                              <span className="font-medium">{row['Service Name']}</span> - 
-                              <span className="text-gray-700"> ₹{row['Service Price (₹)']} for {row['Customer Name']}</span>
-                            </div>
-                          ))}
+                      <div className="mt-4 bg-gradient-to-r from-emerald-100 to-teal-100 border-2 border-emerald-300 rounded-xl p-4 shadow-inner">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center">
+                            <Check size={18} className="text-white" />
+                          </div>
+                          <p className="font-bold text-emerald-800">
+                            {importedData.length} Services Ready to Import!
+                          </p>
+                        </div>
+                        <div className="bg-white rounded-lg overflow-hidden border border-emerald-200">
+                          <div className="grid grid-cols-3 gap-2 p-2 bg-emerald-500 text-white text-xs font-bold">
+                            <span>Service</span>
+                            <span>Price</span>
+                            <span>Duration</span>
+                          </div>
+                          <div className="max-h-32 overflow-y-auto">
+                            {importedData.slice(0, 5).map((row, idx) => (
+                              <div key={idx} className="grid grid-cols-3 gap-2 p-2 text-xs border-b border-emerald-100 last:border-0 hover:bg-emerald-50">
+                                <span className="font-medium text-gray-800 truncate">{row['Service Name']}</span>
+                                <span className="text-emerald-700">₹{row['Service Price (₹)']}</span>
+                                <span className="text-gray-600">{row['Duration (mins)']} mins</span>
+                              </div>
+                            ))}
+                          </div>
                           {importedData.length > 5 && (
-                            <p className="text-gray-600 mt-2">...and {importedData.length - 5} more</p>
+                            <p className="text-xs text-center py-2 text-gray-500 bg-gray-50">
+                              +{importedData.length - 5} more services
+                            </p>
                           )}
                         </div>
                       </div>
@@ -1349,7 +1715,7 @@ export default function ServicesPage() {
               </div>
             </div>
 
-            <DialogFooter className="flex-col sm:flex-row gap-3">
+            <DialogFooter className="flex-col sm:flex-row gap-3 pt-4 border-t">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1362,20 +1728,290 @@ export default function ServicesPage() {
                 Cancel
               </Button>
               <Button
-                onClick={() => processBulkImport(false)}
+                onClick={processBulkImport}
                 disabled={importedData.length === 0}
-                className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700"
+                className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 hover:from-emerald-700 hover:via-green-700 hover:to-teal-700 shadow-lg gap-2 text-base py-5"
               >
-                <Upload size={16} className="mr-2" />
-                Import Services
+                <ShoppingCart size={20} />
+                Import Services & Open POS
               </Button>
-              <Button
-                onClick={() => processBulkImport(true)}
-                disabled={importedData.length === 0}
-                className="w-full sm:w-auto bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-              >
-                <ShoppingCart size={16} className="mr-2" />
-                Import & Bill in POS
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Services Report Dialog */}
+        <Dialog open={isReportsOpen} onOpenChange={setIsReportsOpen}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <BarChart3 className="text-white" size={24} />
+                </div>
+                <div className="flex flex-col">
+                  <span>Services Report</span>
+                  <span className="text-sm font-normal text-gray-500 flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      servicesReportPeriod === 'today' ? 'bg-blue-100 text-blue-700' :
+                      servicesReportPeriod === 'week' ? 'bg-green-100 text-green-700' :
+                      servicesReportPeriod === 'month' ? 'bg-purple-100 text-purple-700' :
+                      servicesReportPeriod === 'year' ? 'bg-amber-100 text-amber-700' :
+                      'bg-pink-100 text-pink-700'
+                    }`}>
+                      {servicesReportPeriod === 'today' ? "Today's Report" :
+                       servicesReportPeriod === 'week' ? 'Weekly Report' :
+                       servicesReportPeriod === 'month' ? 'Monthly Report' :
+                       servicesReportPeriod === 'year' ? 'Yearly Report' :
+                       'Custom Range'}
+                    </span>
+                  </span>
+                </div>
+              </DialogTitle>
+              <DialogDescription>
+                Comprehensive analysis of your services catalog
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Custom Date Range Picker */}
+            {servicesReportPeriod === 'custom' && (
+              <div className="bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl p-4 border border-pink-200 mb-4">
+                <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <CalendarDays className="text-pink-600" size={18} />
+                  Select Custom Date Range
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-gray-600">From Date</Label>
+                    <Input
+                      type="date"
+                      value={customServicesReportDates.from}
+                      onChange={(e) => setCustomServicesReportDates(prev => ({ ...prev, from: e.target.value }))}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm text-gray-600">To Date</Label>
+                    <Input
+                      type="date"
+                      value={customServicesReportDates.to}
+                      onChange={(e) => setCustomServicesReportDates(prev => ({ ...prev, to: e.target.value }))}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(() => {
+              const report = generateServicesReport();
+              return (
+                <div className="space-y-6 py-4">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Package2 className="text-blue-600" size={20} />
+                        <span className="text-sm text-gray-600">Total Services</span>
+                      </div>
+                      <p className="text-3xl font-bold text-blue-700">{report.summary.totalServices}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-4 border border-emerald-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <TrendingUp className="text-emerald-600" size={20} />
+                        <span className="text-sm text-gray-600">Enabled</span>
+                      </div>
+                      <p className="text-3xl font-bold text-emerald-700">{report.summary.enabledServices}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <PieChart className="text-amber-600" size={20} />
+                        <span className="text-sm text-gray-600">Avg Price</span>
+                      </div>
+                      <p className="text-3xl font-bold text-amber-700">₹{report.summary.averagePrice}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="text-purple-600" size={20} />
+                        <span className="text-sm text-gray-600">Total Revenue Potential</span>
+                      </div>
+                      <p className="text-3xl font-bold text-purple-700">₹{report.summary.totalRevenue.toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  {/* More Stats */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-white rounded-xl p-4 border shadow-sm">
+                      <p className="text-sm text-gray-500">Highest Price</p>
+                      <p className="text-xl font-bold text-gray-800">₹{report.summary.highestPrice}</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border shadow-sm">
+                      <p className="text-sm text-gray-500">Lowest Price</p>
+                      <p className="text-xl font-bold text-gray-800">₹{report.summary.lowestPrice}</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border shadow-sm">
+                      <p className="text-sm text-gray-500">Avg Duration</p>
+                      <p className="text-xl font-bold text-gray-800">{report.summary.averageDuration} mins</p>
+                    </div>
+                  </div>
+
+                  {/* Category Breakdown */}
+                  <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3">
+                      <h3 className="font-bold flex items-center gap-2">
+                        <PieChart size={18} />
+                        Category Breakdown
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Category</th>
+                            <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">Services</th>
+                            <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">%</th>
+                            <th className="text-right px-4 py-3 text-sm font-semibold text-gray-600">Total Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.categoryBreakdown.map((cat, idx) => (
+                            <tr key={idx} className="border-t hover:bg-gray-50">
+                              <td className="px-4 py-3 font-medium text-gray-800">{cat.name}</td>
+                              <td className="px-4 py-3 text-center text-gray-600">{cat.count}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-medium">
+                                  {cat.percentage}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right font-semibold text-emerald-600">₹{cat.totalRevenue.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Package Services */}
+                  {report.packages.length > 0 && (
+                    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                      <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-3">
+                        <h3 className="font-bold flex items-center gap-2">
+                          <Package2 size={18} />
+                          Package Services ({report.packages.length})
+                        </h3>
+                      </div>
+                      <div className="p-4">
+                        <div className="grid gap-3">
+                          {report.packages.map((pkg, idx) => (
+                            <div key={idx} className="flex items-center justify-between bg-amber-50 rounded-lg p-3 border border-amber-200">
+                              <div>
+                                <p className="font-medium text-gray-800">{pkg.name}</p>
+                                <p className="text-sm text-gray-500">{pkg.category}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-amber-700">₹{pkg.price}</p>
+                                <p className="text-sm text-emerald-600">{pkg.discount}% off</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* All Services Table */}
+                  <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="bg-gradient-to-r from-gray-700 to-gray-800 text-white px-4 py-3">
+                      <h3 className="font-bold flex items-center gap-2">
+                        <FileText size={18} />
+                        All Services Details
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto max-h-64">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-100 sticky top-0">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-gray-600">Service</th>
+                            <th className="text-left px-3 py-2 font-semibold text-gray-600">Category</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Price</th>
+                            <th className="text-center px-3 py-2 font-semibold text-gray-600">Duration</th>
+                            <th className="text-center px-3 py-2 font-semibold text-gray-600">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.allServices.map((svc, idx) => (
+                            <tr key={idx} className="border-t hover:bg-gray-50">
+                              <td className="px-3 py-2 font-medium text-gray-800">{svc.name}</td>
+                              <td className="px-3 py-2 text-gray-600">{svc.category}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-emerald-600">₹{svc.price}</td>
+                              <td className="px-3 py-2 text-center text-gray-600">{svc.duration} mins</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${svc.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                  {svc.enabled ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  {report.recommendations.length > 0 && (
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-4">
+                      <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        💡 Recommendations
+                      </h3>
+                      <ul className="space-y-2">
+                        {report.recommendations.map((rec, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
+                            <span className="text-blue-500 mt-1">•</span>
+                            {rec}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Download Buttons */}
+                  <div className="border-t pt-4">
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      <Download size={18} />
+                      Download Report
+                    </h3>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        onClick={() => downloadReport('csv')}
+                        variant="outline"
+                        className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        <FileSpreadsheet size={18} />
+                        Download CSV
+                      </Button>
+                      <Button
+                        onClick={() => downloadReport('excel')}
+                        variant="outline"
+                        className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      >
+                        <FileSpreadsheet size={18} />
+                        Download Excel
+                      </Button>
+                      <Button
+                        onClick={() => downloadReport('pdf')}
+                        variant="outline"
+                        className="gap-2 border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        <FileText size={18} />
+                        Download PDF
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsReportsOpen(false)}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>

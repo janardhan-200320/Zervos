@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Edit, Trash2, Package, DollarSign, Tag, MoreVertical, Search, Box, Upload, FileSpreadsheet, ShoppingCart } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, DollarSign, Tag, MoreVertical, Search, Box, Upload, FileSpreadsheet, ShoppingCart, Check, BarChart3, Download, FileText, PieChart, TrendingUp, AlertTriangle, PackageX, CalendarDays, ChevronDown } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import {
   Dialog,
   DialogContent,
@@ -75,6 +76,12 @@ export default function ProductsPage() {
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [importedData, setImportedData] = useState<any[]>([]);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [isReportsOpen, setIsReportsOpen] = useState(false);
+  const [productsReportPeriod, setProductsReportPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'custom'>('month');
+  const [customProductsReportDates, setCustomProductsReportDates] = useState({ from: '', to: '' });
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
@@ -91,7 +98,310 @@ export default function ProductsPage() {
     stock: '',
   });
 
-  const categories = ['Spa Products', 'Hair Care', 'Skin Care', 'Makeup', 'Fitness Equipment', 'Supplements', 'Retail', 'Other'];
+  const defaultCategories = ['Spa Products', 'Hair Care', 'Skin Care', 'Makeup', 'Fitness Equipment', 'Supplements', 'Retail', 'Other'];
+  
+  // Combine default and custom categories
+  const categories = [...defaultCategories, ...customCategories];
+
+  // Load custom categories from localStorage
+  useEffect(() => {
+    const savedCategories = localStorage.getItem('zervos_custom_product_categories');
+    if (savedCategories) {
+      setCustomCategories(JSON.parse(savedCategories));
+    }
+  }, []);
+
+  // Save custom category
+  const addCustomCategory = () => {
+    if (customCategoryName.trim() && !categories.includes(customCategoryName.trim())) {
+      const newCategories = [...customCategories, customCategoryName.trim()];
+      setCustomCategories(newCategories);
+      localStorage.setItem('zervos_custom_product_categories', JSON.stringify(newCategories));
+      setFormData({ ...formData, category: customCategoryName.trim() });
+      setCustomCategoryName('');
+      setIsCustomCategory(false);
+      toast({
+        title: '✅ Category Added',
+        description: `"${customCategoryName.trim()}" has been added to categories`,
+      });
+    }
+  };
+
+  // Filter products by time period
+  const getFilteredProductsByPeriod = () => {
+    const now = new Date();
+    let startDate: Date;
+    let endDate: Date = now;
+
+    switch (productsReportPeriod) {
+      case 'today':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case 'week':
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      case 'custom':
+        startDate = customProductsReportDates.from ? new Date(customProductsReportDates.from) : new Date(0);
+        endDate = customProductsReportDates.to ? new Date(customProductsReportDates.to) : now;
+        break;
+      default:
+        startDate = new Date(0);
+    }
+
+    return products.filter(product => {
+      const productDate = new Date(product.createdAt);
+      return productDate >= startDate && productDate <= endDate;
+    });
+  };
+
+  // Generate Products Report
+  const generateProductsReport = () => {
+    const filteredProducts = getFilteredProductsByPeriod();
+    const enabledProducts = filteredProducts.filter(p => p.isEnabled);
+    const disabledProducts = filteredProducts.filter(p => !p.isEnabled);
+    const totalStock = filteredProducts.reduce((sum, p) => sum + parseInt(p.stock || '0'), 0);
+    const totalInventoryValue = filteredProducts.reduce((sum, p) => sum + (parseInt(p.stock || '0') * parseFloat(p.price || '0')), 0);
+    const lowStockProducts = filteredProducts.filter(p => parseInt(p.stock || '0') <= 10 && parseInt(p.stock || '0') > 0);
+    const outOfStockProducts = filteredProducts.filter(p => parseInt(p.stock || '0') === 0);
+    
+    // Period label
+    const periodLabel = productsReportPeriod === 'today' ? "Today's" :
+                       productsReportPeriod === 'week' ? 'Weekly' :
+                       productsReportPeriod === 'month' ? 'Monthly' :
+                       productsReportPeriod === 'year' ? 'Yearly' : 'Custom Range';
+    
+    // Category breakdown
+    const categoryStats = categories.map(cat => {
+      const catProducts = filteredProducts.filter(p => p.category === cat);
+      const catStock = catProducts.reduce((sum, p) => sum + parseInt(p.stock || '0'), 0);
+      const catValue = catProducts.reduce((sum, p) => sum + (parseInt(p.stock || '0') * parseFloat(p.price || '0')), 0);
+      return {
+        name: cat,
+        count: catProducts.length,
+        stock: catStock,
+        inventoryValue: catValue,
+        percentage: filteredProducts.length > 0 ? Math.round((catProducts.length / filteredProducts.length) * 100) : 0,
+      };
+    }).filter(cat => cat.count > 0);
+
+    const prices = filteredProducts.map(p => parseFloat(p.price || '0'));
+    const avgPrice = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
+    const highestPrice = prices.length > 0 ? Math.max(...prices) : 0;
+    const lowestPrice = prices.length > 0 ? Math.min(...prices.filter(p => p > 0)) : 0;
+
+    // Generate recommendations
+    const recommendations: string[] = [];
+    if (outOfStockProducts.length > 0) {
+      recommendations.push(`🚨 ${outOfStockProducts.length} product(s) are out of stock - immediate reorder required!`);
+    }
+    if (lowStockProducts.length > 0) {
+      recommendations.push(`⚠️ ${lowStockProducts.length} product(s) have low stock (≤10 units) - consider reordering soon`);
+    }
+    const categoriesWithProducts = categoryStats.filter(c => c.count > 0);
+    if (categoriesWithProducts.length < 3) {
+      recommendations.push(`💡 Consider diversifying - add products in more categories to expand offerings`);
+    }
+    if (filteredProducts.length > 0 && disabledProducts.length / filteredProducts.length > 0.3) {
+      recommendations.push(`📊 ${Math.round(disabledProducts.length / filteredProducts.length * 100)}% of products are disabled - review and enable or remove`);
+    }
+
+    return {
+      period: periodLabel,
+      summary: {
+        totalProducts: filteredProducts.length,
+        enabledProducts: enabledProducts.length,
+        disabledProducts: disabledProducts.length,
+        totalStock,
+        totalInventoryValue,
+        averagePrice: avgPrice,
+        highestPrice,
+        lowestPrice,
+        lowStockCount: lowStockProducts.length,
+        outOfStockCount: outOfStockProducts.length,
+      },
+      categoryBreakdown: categoryStats,
+      lowStockProducts: lowStockProducts.map(p => ({
+        name: p.name,
+        stock: parseInt(p.stock || '0'),
+        sku: p.sku,
+        category: p.category,
+        price: parseFloat(p.price || '0'),
+      })),
+      outOfStockProducts: outOfStockProducts.map(p => ({
+        name: p.name,
+        sku: p.sku,
+        category: p.category,
+        price: parseFloat(p.price || '0'),
+      })),
+      allProducts: filteredProducts.map(p => ({
+        name: p.name,
+        category: p.category,
+        price: parseFloat(p.price || '0'),
+        stock: parseInt(p.stock || '0'),
+        sku: p.sku,
+        enabled: p.isEnabled,
+        inventoryValue: parseInt(p.stock || '0') * parseFloat(p.price || '0'),
+      })),
+      recommendations,
+    };
+  };
+
+  // Download Report in different formats
+  const downloadReport = (format: 'csv' | 'pdf' | 'excel') => {
+    const report = generateProductsReport();
+    const date = new Date().toLocaleDateString('en-IN');
+    const businessName = localStorage.getItem('zervos_business_name') || 'Business';
+
+    if (format === 'csv' || format === 'excel') {
+      let csvContent = '';
+      
+      // Summary Section
+      csvContent += `${businessName} - Products Report\n`;
+      csvContent += `Generated on: ${date}\n\n`;
+      csvContent += `SUMMARY\n`;
+      csvContent += `Total Products,${report.summary.totalProducts}\n`;
+      csvContent += `Enabled Products,${report.summary.enabledProducts}\n`;
+      csvContent += `Disabled Products,${report.summary.disabledProducts}\n`;
+      csvContent += `Total Stock Units,${report.summary.totalStock}\n`;
+      csvContent += `Total Inventory Value,₹${report.summary.totalInventoryValue.toLocaleString()}\n`;
+      csvContent += `Average Price,₹${report.summary.averagePrice}\n`;
+      csvContent += `Highest Price,₹${report.summary.highestPrice}\n`;
+      csvContent += `Lowest Price,₹${report.summary.lowestPrice}\n`;
+      csvContent += `Low Stock Products,${report.summary.lowStockCount}\n`;
+      csvContent += `Out of Stock Products,${report.summary.outOfStockCount}\n\n`;
+
+      // Category Breakdown
+      csvContent += `CATEGORY BREAKDOWN\n`;
+      csvContent += `Category,Products,Stock,Inventory Value,%\n`;
+      report.categoryBreakdown.forEach(cat => {
+        csvContent += `${cat.name},${cat.count},${cat.stock},₹${cat.inventoryValue.toLocaleString()},${cat.percentage}%\n`;
+      });
+      csvContent += '\n';
+
+      // Out of Stock Alert
+      if (report.outOfStockProducts.length > 0) {
+        csvContent += `OUT OF STOCK - REORDER IMMEDIATELY\n`;
+        csvContent += `Product Name,SKU,Category,Price\n`;
+        report.outOfStockProducts.forEach(p => {
+          csvContent += `${p.name},${p.sku},${p.category},₹${p.price}\n`;
+        });
+        csvContent += '\n';
+      }
+
+      // Low Stock Warning
+      if (report.lowStockProducts.length > 0) {
+        csvContent += `LOW STOCK WARNING (≤10 units)\n`;
+        csvContent += `Product Name,SKU,Stock,Category,Price\n`;
+        report.lowStockProducts.forEach(p => {
+          csvContent += `${p.name},${p.sku},${p.stock},${p.category},₹${p.price}\n`;
+        });
+        csvContent += '\n';
+      }
+
+      // All Products
+      csvContent += `ALL PRODUCTS\n`;
+      csvContent += `Product Name,Category,Price,Stock,SKU,Status,Inventory Value\n`;
+      report.allProducts.forEach(p => {
+        csvContent += `${p.name},${p.category},₹${p.price},${p.stock},${p.sku},${p.enabled ? 'Active' : 'Inactive'},₹${p.inventoryValue.toLocaleString()}\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${businessName}_Products_Report_${date}.${format === 'excel' ? 'xls' : 'csv'}`;
+      link.click();
+
+      toast({ title: `📊 ${format.toUpperCase()} Report Downloaded!`, description: `Products report saved successfully` });
+    }
+
+    if (format === 'pdf') {
+      const doc = new jsPDF();
+      let y = 20;
+
+      // Header
+      doc.setFontSize(20);
+      doc.setTextColor(59, 130, 246);
+      doc.text(`${businessName}`, 20, y);
+      y += 10;
+      doc.setFontSize(16);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Products Inventory Report', 20, y);
+      y += 8;
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Generated: ${date}`, 20, y);
+      y += 15;
+
+      // Summary
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Summary', 20, y);
+      y += 8;
+      doc.setFontSize(10);
+      doc.text(`Total Products: ${report.summary.totalProducts}`, 25, y);
+      y += 6;
+      doc.text(`Total Stock Units: ${report.summary.totalStock}`, 25, y);
+      y += 6;
+      doc.text(`Total Inventory Value: Rs.${report.summary.totalInventoryValue.toLocaleString()}`, 25, y);
+      y += 6;
+      doc.text(`Average Price: Rs.${report.summary.averagePrice}`, 25, y);
+      y += 10;
+
+      // Stock Alerts
+      if (report.summary.outOfStockCount > 0 || report.summary.lowStockCount > 0) {
+        doc.setFontSize(14);
+        doc.setTextColor(220, 38, 38);
+        doc.text('Stock Alerts', 20, y);
+        y += 8;
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
+        if (report.summary.outOfStockCount > 0) {
+          doc.text(`Out of Stock: ${report.summary.outOfStockCount} products (URGENT)`, 25, y);
+          y += 6;
+        }
+        if (report.summary.lowStockCount > 0) {
+          doc.text(`Low Stock (≤10 units): ${report.summary.lowStockCount} products`, 25, y);
+          y += 6;
+        }
+        y += 5;
+      }
+
+      // Categories
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.text('Category Breakdown', 20, y);
+      y += 8;
+      doc.setFontSize(10);
+      report.categoryBreakdown.slice(0, 8).forEach(cat => {
+        doc.text(`${cat.name}: ${cat.count} products, ${cat.stock} units, Rs.${cat.inventoryValue.toLocaleString()}`, 25, y);
+        y += 6;
+      });
+      y += 5;
+
+      // Recommendations
+      if (report.recommendations.length > 0) {
+        doc.setFontSize(14);
+        doc.text('Recommendations', 20, y);
+        y += 8;
+        doc.setFontSize(9);
+        report.recommendations.forEach(rec => {
+          const cleanRec = rec.replace(/[🚨⚠️💡📊]/g, '');
+          doc.text(`- ${cleanRec}`, 25, y);
+          y += 6;
+        });
+      }
+
+      doc.save(`${businessName}_Products_Report_${date}.pdf`);
+      toast({ title: '📄 PDF Report Downloaded!', description: 'Products inventory report saved as PDF' });
+    }
+  };
 
   // CSV Template Download Function
   const downloadCSVTemplate = () => {
@@ -108,38 +418,35 @@ export default function ProductsPage() {
       ['Hair Serum', '1100', 'HAIR-101', '50', 'Hair Care', 'Premium anti-frizz serum'],
       ['Face Cream', '1300', 'SKIN-201', '75', 'Skin Care', 'Moisturizing day cream'],
       ['Body Lotion', '850', 'SKIN-202', '60', 'Skin Care', 'Hydrating body lotion'],
-      ['', '', '', '', '', ''],
-      ['', '', '', '', '', ''],
-      ['', '', '', '', '', ''],
-      ['', '', '', '', '', ''],
-      ['', '', '', '', '', ''],
+      ['Shampoo', '600', 'HAIR-102', '100', 'Hair Care', 'Professional shampoo'],
+      ['Protein Powder', '1900', 'SUP-001', '40', 'Supplements', 'Whey protein isolate'],
     ];
 
-    // Create clean CSV content with title, customer info, and products table
-    let csvContent = 'BULK PRODUCTS IMPORT\n';
-    csvContent += '\n';
-    csvContent += 'Customer Name,Customer Email,Customer Phone\n';
-    csvContent += 'John Doe,john@example.com,9876543210\n';
-    csvContent += '\n';
+    // Create styled CSV content - This is a clean CSV for Excel
+    let csvContent = '';
     csvContent += headers.join(',') + '\n';
     sampleData.forEach(row => {
       csvContent += row.join(',') + '\n';
     });
+    // Add empty rows for user to fill
+    for (let i = 0; i < 10; i++) {
+      csvContent += ',,,,,' + '\n';
+    }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `Bulk_Products_Import_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Products_Bulk_Import_Template.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
     toast({
-      title: '📥 Template Downloaded',
-      description: 'Single customer bulk products template - Apply green fill to header row & set font size 28',
-      duration: 5000,
+      title: '📥 Template Downloaded!',
+      description: 'Open in Excel → Select header row → Apply bold & green background. Fill your products and upload!',
+      duration: 6000,
     });
   };
 
@@ -163,36 +470,24 @@ export default function ProductsPage() {
       }
 
       const data = [];
-      let customerInfo: any = null;
-      let productHeaderIndex = -1;
+      let headerIndex = -1;
 
-      // Find the product header row and customer info
+      // Find the product header row
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        const values = line.split(',').map(v => v.trim());
+        const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
         console.log(`Line ${i}:`, values);
         
-        // Check if this is customer info row
-        if (values[0] === 'Customer Name' && i + 1 < lines.length) {
-          const customerValues = lines[i + 1].split(',').map(v => v.trim());
-          customerInfo = {
-            'Customer Name': customerValues[0] || '',
-            'Customer Email': customerValues[1] || '',
-            'Customer Phone': customerValues[2] || ''
-          };
-          continue;
-        }
-        
-        // Check if this is the product header row
-        if (values[0] === 'Product Name' || values.some(v => v.toLowerCase().includes('product'))) {
-          productHeaderIndex = i;
+        // Check if this is the product header row (starts with Product Name)
+        if (values[0] === 'Product Name' || values[0].toLowerCase().includes('product name')) {
+          headerIndex = i;
           const headers = values;
           
           // Parse product rows
           for (let j = i + 1; j < lines.length; j++) {
-            const productValues = lines[j].split(',').map(v => v.trim());
+            const productValues = lines[j].split(',').map(v => v.trim().replace(/"/g, ''));
             if (productValues[0] && productValues[0] !== '') {
-              const row: any = customerInfo ? { ...customerInfo } : {};
+              const row: any = {};
               headers.forEach((header, index) => {
                 row[header] = productValues[index] || '';
               });
@@ -252,9 +547,9 @@ export default function ProductsPage() {
     }
   };
 
-  // Process and import CSV data
-  const processBulkImport = (directToPOS: boolean = false) => {
-    console.log('processBulkImport called with directToPOS:', directToPOS);
+  // Process and import CSV data - Always navigates to POS after import
+  const processBulkImport = () => {
+    console.log('processBulkImport called');
     console.log('importedData:', importedData);
     
     if (importedData.length === 0) {
@@ -267,20 +562,8 @@ export default function ProductsPage() {
     }
 
     const newProducts: Product[] = [];
-    const errors: string[] = [];
 
-    // Extract customer info - it's in all rows now
-    let customerInfo = { name: '', email: '', phone: '' };
-    
-    if (importedData.length > 0 && importedData[0]['Customer Name']) {
-      customerInfo = {
-        name: importedData[0]['Customer Name'] || '',
-        email: importedData[0]['Customer Email'] || '',
-        phone: importedData[0]['Customer Phone'] || ''
-      };
-    }
-
-    // Process product rows (all rows have customer info, just check for Product Name)
+    // Process product rows
     importedData.forEach((row, index) => {
       if (!row['Product Name'] || !row['Product Price (₹)']) {
         return; // Skip empty rows
@@ -295,7 +578,7 @@ export default function ProductsPage() {
         name: row['Product Name'],
         price: row['Product Price (₹)'],
         currency: 'INR',
-        description: row['Description/Notes'] || `Product for ${customerInfo.name || 'customer'}`,
+        description: row['Description/Notes'] || '',
         category: category,
         sku: sku,
         stock: stock,
@@ -306,75 +589,36 @@ export default function ProductsPage() {
       newProducts.push(newProduct);
     });
 
-    if (errors.length > 0) {
-      toast({
-        title: 'Import Errors',
-        description: errors.join(', '),
-        variant: 'destructive',
-      });
-    }
-
     if (newProducts.length > 0) {
       saveProducts([...products, ...newProducts]);
       
-      if (directToPOS) {
-        // Extract customer info from first row
-        const custInfo = importedData.length > 0 ? {
-          name: importedData[0]['Customer Name'] || '',
-          email: importedData[0]['Customer Email'] || '',
-          phone: importedData[0]['Customer Phone'] || ''
-        } : { name: '', email: '', phone: '' };
+      // Store data for POS with prices in cents
+      const productsForPOS = newProducts.map(prod => ({
+        ...prod,
+        price: Math.round(parseFloat(prod.price) * 100) // Convert to cents
+      }));
 
-        console.log('Customer info:', custInfo);
-        console.log('New products before conversion:', newProducts);
-
-        // Store data for POS with prices in cents
-        const productsForPOS = newProducts.map(prod => ({
-          ...prod,
-          price: Math.round(parseFloat(prod.price) * 100) // Convert to cents
-        }));
-
-        console.log('Products for POS (with cents):', productsForPOS);
-
-        const bulkData = {
-          services: productsForPOS,
-          customers: [custInfo]
-        };
-        
-        localStorage.setItem('bulk_import_data', JSON.stringify(bulkData));
-        console.log('Data stored in localStorage:', bulkData);
-        
-        // Verify storage
-        const verification = localStorage.getItem('bulk_import_data');
-        console.log('Verification - data in localStorage:', verification);
-        
-        // Close dialog first
-        setIsBulkImportOpen(false);
-        setCsvFile(null);
-        setImportedData([]);
-        
-        toast({
-          title: '✅ Products Imported',
-          description: `${newProducts.length} products added. Redirecting to POS...`,
-        });
-        
-        // Small delay for toast, then navigate
-        setTimeout(() => {
-          console.log('Navigating to /pos-register');
-          setLocation('/pos-register');
-        }, 500);
-        
-        return; // Don't execute the rest
-      } else {
-        toast({
-          title: '✅ Import Successful',
-          description: `${newProducts.length} products have been added to your inventory`,
-        });
-      }
+      const bulkData = {
+        services: productsForPOS,
+        type: 'products'
+      };
       
+      localStorage.setItem('bulk_import_data', JSON.stringify(bulkData));
+      
+      // Close dialog first
       setIsBulkImportOpen(false);
       setCsvFile(null);
       setImportedData([]);
+      
+      toast({
+        title: '✅ Products Imported Successfully!',
+        description: `${newProducts.length} products added. Opening POS for billing...`,
+      });
+      
+      // Navigate to POS
+      setTimeout(() => {
+        setLocation('/pos-register');
+      }, 500);
     }
   };
 
@@ -561,6 +805,37 @@ export default function ProductsPage() {
             </div>
           </div>
           <div className="flex gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50">
+                  <BarChart3 size={18} />
+                  Reports
+                  <ChevronDown size={14} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuItem onClick={() => { setProductsReportPeriod('today'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Today's Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setProductsReportPeriod('week'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Weekly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setProductsReportPeriod('month'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Monthly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setProductsReportPeriod('year'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Yearly Report
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setProductsReportPeriod('custom'); setIsReportsOpen(true); }}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Custom Range
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button onClick={() => setIsBulkImportOpen(true)} variant="outline" className="gap-2 border-green-300 text-green-700 hover:bg-green-50">
               <Upload size={18} />
               Import Bulk
@@ -843,16 +1118,56 @@ export default function ProductsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="category">Category *</Label>
-                <Select value={formData.category} onValueChange={(val) => setFormData({ ...formData, category: val })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {!isCustomCategory ? (
+                  <Select 
+                    value={formData.category} 
+                    onValueChange={(val) => {
+                      if (val === '__custom__') {
+                        setIsCustomCategory(true);
+                      } else {
+                        setFormData({ ...formData, category: val });
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                      <SelectItem value="__custom__" className="text-orange-600 font-medium border-t mt-1 pt-2">
+                        <span className="flex items-center gap-2">
+                          <Plus size={14} /> Add Custom Category
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Enter custom category name"
+                      value={customCategoryName}
+                      onChange={(e) => setCustomCategoryName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addCustomCategory()}
+                      autoFocus
+                    />
+                    <Button type="button" onClick={addCustomCategory} size="sm" className="bg-orange-600 hover:bg-orange-700">
+                      Add
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setIsCustomCategory(false);
+                        setCustomCategoryName('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -951,32 +1266,36 @@ export default function ProductsPage() {
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl">
-                  <Upload className="text-white" size={24} />
+                <div className="p-3 bg-gradient-to-br from-orange-500 via-amber-500 to-yellow-600 rounded-2xl shadow-lg">
+                  <Upload className="text-white" size={28} />
                 </div>
-                Bulk Import Products
+                <div>
+                  <span className="bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">
+                    Bulk Import Products
+                  </span>
+                  <p className="text-sm font-normal text-gray-500 mt-1">Quick & Easy CSV Import</p>
+                </div>
               </DialogTitle>
-              <DialogDescription className="text-base">
-                Import multiple products at once using our CSV template. Perfect for adding products for customers purchasing multiple items.
-              </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-6 py-6">
+            <div className="space-y-5 py-4">
               {/* Step 1: Download Template */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6">
+              <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-blue-600 text-white rounded-full font-bold text-lg flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
                     1
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Download CSV Template</h3>
-                    <p className="text-sm text-gray-700 mb-4">
-                      Get our professionally designed CSV template with sample data and instructions. 
-                      The template includes fields for customer details, product information, pricing, SKU, stock, and more.
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">📥 Download CSV Template</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Get our ready-to-use template with sample data. Open in Excel and apply styling for professional look!
                     </p>
+                    <div className="bg-white/80 rounded-xl p-3 mb-4 border border-blue-100">
+                      <p className="text-xs text-blue-700 font-medium">💡 Pro Tip: In Excel, select header row → Home → Fill Color → Orange for attractive table look!</p>
+                    </div>
                     <Button 
                       onClick={downloadCSVTemplate}
-                      className="bg-blue-600 hover:bg-blue-700 gap-2"
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 gap-2 shadow-md"
                     >
                       <FileSpreadsheet size={18} />
                       Download Template
@@ -986,48 +1305,43 @@ export default function ProductsPage() {
               </div>
 
               {/* Step 2: Fill Template */}
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl p-6">
+              <div className="bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 border-2 border-amber-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-purple-600 text-white rounded-full font-bold text-lg flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
                     2
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Fill in Product Details</h3>
-                    <p className="text-sm text-gray-700 mb-3">
-                      Open the downloaded CSV in Excel or Google Sheets and fill in the following columns:
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📋 Customer Name</span>
-                        <p className="text-gray-600 text-xs mt-1">Full name of the customer</p>
+                    <h3 className="text-lg font-bold text-gray-900 mb-3">✏️ Fill in Your Products</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">📦</span>
+                        <span className="font-bold text-gray-800">Product Name</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., Hair Serum</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📧 Email</span>
-                        <p className="text-gray-600 text-xs mt-1">Customer email address</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">💰</span>
+                        <span className="font-bold text-gray-800">Price (₹)</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., 1100</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📱 Phone</span>
-                        <p className="text-gray-600 text-xs mt-1">10-digit phone number</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">🏷️</span>
+                        <span className="font-bold text-gray-800">SKU</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., HAIR-101</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📦 Product Name</span>
-                        <p className="text-gray-600 text-xs mt-1">Name of the product</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">📊</span>
+                        <span className="font-bold text-gray-800">Stock</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., 50</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">💰 Product Price</span>
-                        <p className="text-gray-600 text-xs mt-1">Price in rupees (₹)</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">📁</span>
+                        <span className="font-bold text-gray-800">Category</span>
+                        <p className="text-gray-500 text-xs mt-1">e.g., Hair Care</p>
                       </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">🏷️ SKU</span>
-                        <p className="text-gray-600 text-xs mt-1">Product SKU code</p>
-                      </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">📊 Stock</span>
-                        <p className="text-gray-600 text-xs mt-1">Available quantity</p>
-                      </div>
-                      <div className="bg-white rounded-lg p-3 border border-purple-200">
-                        <span className="font-semibold text-purple-700">🏪 Category</span>
-                        <p className="text-gray-600 text-xs mt-1">Product category</p>
+                      <div className="bg-white rounded-xl p-3 border-2 border-amber-100 shadow-sm hover:border-amber-300 transition-colors">
+                        <span className="text-2xl block mb-1">📝</span>
+                        <span className="font-bold text-gray-800">Description</span>
+                        <p className="text-gray-500 text-xs mt-1">Brief info</p>
                       </div>
                     </div>
                   </div>
@@ -1035,18 +1349,18 @@ export default function ProductsPage() {
               </div>
 
               {/* Step 3: Upload CSV */}
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-6">
+              <div className="bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 border-2 border-emerald-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="p-3 bg-green-600 text-white rounded-full font-bold text-lg flex-shrink-0">
+                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-xl font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
                     3
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">Upload Filled CSV</h3>
-                    <p className="text-sm text-gray-700 mb-4">
-                      Upload your completed CSV file. We'll validate and import all products automatically.
+                    <h3 className="text-lg font-bold text-gray-900 mb-2">📤 Upload & Import to POS</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Upload your CSV and we'll automatically import products and open POS for billing!
                     </p>
                     
-                    <div className="border-2 border-dashed border-green-300 rounded-lg p-8 text-center bg-white hover:bg-green-50 transition-colors">
+                    <div className="border-3 border-dashed border-emerald-300 rounded-2xl p-6 text-center bg-white/80 hover:bg-emerald-50 transition-all cursor-pointer group">
                       <input
                         type="file"
                         accept=".csv"
@@ -1054,36 +1368,55 @@ export default function ProductsPage() {
                         className="hidden"
                         id="csv-upload-products"
                       />
-                      <label htmlFor="csv-upload-products" className="cursor-pointer">
-                        <Upload size={48} className="mx-auto text-green-600 mb-3" />
+                      <label htmlFor="csv-upload-products" className="cursor-pointer block">
+                        <div className="w-16 h-16 mx-auto mb-3 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <Upload size={32} className="text-emerald-600" />
+                        </div>
                         {csvFile ? (
                           <div>
-                            <p className="text-lg font-semibold text-green-700 mb-1">✅ {csvFile.name}</p>
-                            <p className="text-sm text-gray-600">Click to change file</p>
+                            <p className="text-lg font-bold text-emerald-700 mb-1">✅ {csvFile.name}</p>
+                            <p className="text-sm text-gray-500">Click to change file</p>
                           </div>
                         ) : (
                           <div>
-                            <p className="text-lg font-semibold text-gray-700 mb-1">Click to upload CSV</p>
-                            <p className="text-sm text-gray-500">or drag and drop your file here</p>
+                            <p className="text-lg font-bold text-gray-700 mb-1">Drop CSV here or Click to Upload</p>
+                            <p className="text-sm text-gray-500">Supports .csv files</p>
                           </div>
                         )}
                       </label>
                     </div>
 
                     {importedData.length > 0 && (
-                      <div className="mt-4 bg-green-100 border border-green-300 rounded-lg p-4">
-                        <p className="text-sm font-semibold text-green-800">
-                          ✅ Successfully parsed {importedData.length} product entries
-                        </p>
-                        <div className="mt-2 max-h-40 overflow-y-auto text-xs">
-                          {importedData.slice(0, 5).map((row, idx) => (
-                            <div key={idx} className="py-1 border-b border-green-200 last:border-0">
-                              <span className="font-medium">{row['Product Name']}</span> - 
-                              <span className="text-gray-700"> ₹{row['Product Price (₹)']} for {row['Customer Name']}</span>
-                            </div>
-                          ))}
+                      <div className="mt-4 bg-gradient-to-r from-emerald-100 to-teal-100 border-2 border-emerald-300 rounded-xl p-4 shadow-inner">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center">
+                            <Check size={18} className="text-white" />
+                          </div>
+                          <p className="font-bold text-emerald-800">
+                            {importedData.length} Products Ready to Import!
+                          </p>
+                        </div>
+                        <div className="bg-white rounded-lg overflow-hidden border border-emerald-200">
+                          <div className="grid grid-cols-4 gap-2 p-2 bg-orange-500 text-white text-xs font-bold">
+                            <span>Product</span>
+                            <span>Price</span>
+                            <span>SKU</span>
+                            <span>Stock</span>
+                          </div>
+                          <div className="max-h-32 overflow-y-auto">
+                            {importedData.slice(0, 5).map((row, idx) => (
+                              <div key={idx} className="grid grid-cols-4 gap-2 p-2 text-xs border-b border-emerald-100 last:border-0 hover:bg-orange-50">
+                                <span className="font-medium text-gray-800 truncate">{row['Product Name']}</span>
+                                <span className="text-emerald-700">₹{row['Product Price (₹)']}</span>
+                                <span className="text-gray-600">{row['SKU']}</span>
+                                <span className="text-gray-600">{row['Stock Quantity']}</span>
+                              </div>
+                            ))}
+                          </div>
                           {importedData.length > 5 && (
-                            <p className="text-gray-600 mt-2">...and {importedData.length - 5} more</p>
+                            <p className="text-xs text-center py-2 text-gray-500 bg-gray-50">
+                              +{importedData.length - 5} more products
+                            </p>
                           )}
                         </div>
                       </div>
@@ -1093,7 +1426,7 @@ export default function ProductsPage() {
               </div>
             </div>
 
-            <DialogFooter className="flex-col sm:flex-row gap-3">
+            <DialogFooter className="flex-col sm:flex-row gap-3 pt-4 border-t">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1106,20 +1439,324 @@ export default function ProductsPage() {
                 Cancel
               </Button>
               <Button
-                onClick={() => processBulkImport(false)}
+                onClick={processBulkImport}
                 disabled={importedData.length === 0}
-                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+                className="w-full sm:w-auto bg-gradient-to-r from-orange-600 via-amber-600 to-yellow-600 hover:from-orange-700 hover:via-amber-700 hover:to-yellow-700 shadow-lg gap-2 text-base py-5"
               >
-                <Upload size={16} className="mr-2" />
-                Import Products
+                <ShoppingCart size={20} />
+                Import Products & Open POS
               </Button>
-              <Button
-                onClick={() => processBulkImport(true)}
-                disabled={importedData.length === 0}
-                className="w-full sm:w-auto bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-              >
-                <ShoppingCart size={16} className="mr-2" />
-                Import & Bill in POS
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Products Report Dialog */}
+        <Dialog open={isReportsOpen} onOpenChange={setIsReportsOpen}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <BarChart3 className="text-white" size={24} />
+                </div>
+                <div className="flex flex-col">
+                  <span>Products Inventory Report</span>
+                  <span className="text-sm font-normal text-gray-500 flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      productsReportPeriod === 'today' ? 'bg-blue-100 text-blue-700' :
+                      productsReportPeriod === 'week' ? 'bg-green-100 text-green-700' :
+                      productsReportPeriod === 'month' ? 'bg-purple-100 text-purple-700' :
+                      productsReportPeriod === 'year' ? 'bg-amber-100 text-amber-700' :
+                      'bg-pink-100 text-pink-700'
+                    }`}>
+                      {productsReportPeriod === 'today' ? "Today's Report" :
+                       productsReportPeriod === 'week' ? 'Weekly Report' :
+                       productsReportPeriod === 'month' ? 'Monthly Report' :
+                       productsReportPeriod === 'year' ? 'Yearly Report' :
+                       'Custom Range'}
+                    </span>
+                  </span>
+                </div>
+              </DialogTitle>
+              <DialogDescription>
+                Comprehensive analysis of your product inventory with stock alerts
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Custom Date Range Picker */}
+            {productsReportPeriod === 'custom' && (
+              <div className="bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl p-4 border border-pink-200 mb-4">
+                <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <CalendarDays className="text-pink-600" size={18} />
+                  Select Custom Date Range
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm text-gray-600">From Date</Label>
+                    <Input
+                      type="date"
+                      value={customProductsReportDates.from}
+                      onChange={(e) => setCustomProductsReportDates(prev => ({ ...prev, from: e.target.value }))}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm text-gray-600">To Date</Label>
+                    <Input
+                      type="date"
+                      value={customProductsReportDates.to}
+                      onChange={(e) => setCustomProductsReportDates(prev => ({ ...prev, to: e.target.value }))}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(() => {
+              const report = generateProductsReport();
+              return (
+                <div className="space-y-6 py-4">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Package className="text-blue-600" size={20} />
+                        <span className="text-sm text-gray-600">Total Products</span>
+                      </div>
+                      <p className="text-3xl font-bold text-blue-700">{report.summary.totalProducts}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-4 border border-emerald-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Box className="text-emerald-600" size={20} />
+                        <span className="text-sm text-gray-600">Total Stock</span>
+                      </div>
+                      <p className="text-3xl font-bold text-emerald-700">{report.summary.totalStock.toLocaleString()}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <DollarSign className="text-purple-600" size={20} />
+                        <span className="text-sm text-gray-600">Inventory Value</span>
+                      </div>
+                      <p className="text-3xl font-bold text-purple-700">₹{report.summary.totalInventoryValue.toLocaleString()}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <TrendingUp className="text-amber-600" size={20} />
+                        <span className="text-sm text-gray-600">Avg Price</span>
+                      </div>
+                      <p className="text-3xl font-bold text-amber-700">₹{report.summary.averagePrice}</p>
+                    </div>
+                  </div>
+
+                  {/* Stock Alerts */}
+                  {(report.summary.outOfStockCount > 0 || report.summary.lowStockCount > 0) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {report.summary.outOfStockCount > 0 && (
+                        <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-4 border-2 border-red-300">
+                          <div className="flex items-center gap-2 mb-3">
+                            <PackageX className="text-red-600" size={22} />
+                            <span className="font-bold text-red-700">Out of Stock Alert</span>
+                            <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-bold ml-auto">
+                              {report.summary.outOfStockCount} products
+                            </span>
+                          </div>
+                          <div className="space-y-2 max-h-32 overflow-y-auto">
+                            {report.outOfStockProducts.slice(0, 5).map((p, idx) => (
+                              <div key={idx} className="bg-white rounded-lg p-2 text-sm border border-red-200 flex justify-between">
+                                <span className="font-medium text-gray-800">{p.name}</span>
+                                <span className="text-gray-500">{p.sku}</span>
+                              </div>
+                            ))}
+                            {report.outOfStockProducts.length > 5 && (
+                              <p className="text-xs text-red-600 text-center">+{report.outOfStockProducts.length - 5} more</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {report.summary.lowStockCount > 0 && (
+                        <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl p-4 border-2 border-amber-300">
+                          <div className="flex items-center gap-2 mb-3">
+                            <AlertTriangle className="text-amber-600" size={22} />
+                            <span className="font-bold text-amber-700">Low Stock Warning</span>
+                            <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-xs font-bold ml-auto">
+                              {report.summary.lowStockCount} products
+                            </span>
+                          </div>
+                          <div className="space-y-2 max-h-32 overflow-y-auto">
+                            {report.lowStockProducts.slice(0, 5).map((p, idx) => (
+                              <div key={idx} className="bg-white rounded-lg p-2 text-sm border border-amber-200 flex justify-between">
+                                <span className="font-medium text-gray-800">{p.name}</span>
+                                <span className="text-amber-600 font-bold">{p.stock} left</span>
+                              </div>
+                            ))}
+                            {report.lowStockProducts.length > 5 && (
+                              <p className="text-xs text-amber-600 text-center">+{report.lowStockProducts.length - 5} more</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* More Stats */}
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-white rounded-xl p-4 border shadow-sm">
+                      <p className="text-sm text-gray-500">Enabled</p>
+                      <p className="text-xl font-bold text-emerald-600">{report.summary.enabledProducts}</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border shadow-sm">
+                      <p className="text-sm text-gray-500">Disabled</p>
+                      <p className="text-xl font-bold text-gray-500">{report.summary.disabledProducts}</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border shadow-sm">
+                      <p className="text-sm text-gray-500">Highest Price</p>
+                      <p className="text-xl font-bold text-gray-800">₹{report.summary.highestPrice}</p>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border shadow-sm">
+                      <p className="text-sm text-gray-500">Lowest Price</p>
+                      <p className="text-xl font-bold text-gray-800">₹{report.summary.lowestPrice}</p>
+                    </div>
+                  </div>
+
+                  {/* Category Breakdown */}
+                  <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3">
+                      <h3 className="font-bold flex items-center gap-2">
+                        <PieChart size={18} />
+                        Category Breakdown
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Category</th>
+                            <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">Products</th>
+                            <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">Stock</th>
+                            <th className="text-right px-4 py-3 text-sm font-semibold text-gray-600">Inventory Value</th>
+                            <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.categoryBreakdown.map((cat, idx) => (
+                            <tr key={idx} className="border-t hover:bg-gray-50">
+                              <td className="px-4 py-3 font-medium text-gray-800">{cat.name}</td>
+                              <td className="px-4 py-3 text-center text-gray-600">{cat.count}</td>
+                              <td className="px-4 py-3 text-center text-gray-600">{cat.stock.toLocaleString()}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-emerald-600">₹{cat.inventoryValue.toLocaleString()}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-medium">
+                                  {cat.percentage}%
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* All Products Table */}
+                  <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="bg-gradient-to-r from-gray-700 to-gray-800 text-white px-4 py-3">
+                      <h3 className="font-bold flex items-center gap-2">
+                        <FileText size={18} />
+                        All Products Details
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto max-h-64">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-100 sticky top-0">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-gray-600">Product</th>
+                            <th className="text-left px-3 py-2 font-semibold text-gray-600">SKU</th>
+                            <th className="text-left px-3 py-2 font-semibold text-gray-600">Category</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Price</th>
+                            <th className="text-center px-3 py-2 font-semibold text-gray-600">Stock</th>
+                            <th className="text-right px-3 py-2 font-semibold text-gray-600">Inv Value</th>
+                            <th className="text-center px-3 py-2 font-semibold text-gray-600">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.allProducts.map((p, idx) => (
+                            <tr key={idx} className="border-t hover:bg-gray-50">
+                              <td className="px-3 py-2 font-medium text-gray-800">{p.name}</td>
+                              <td className="px-3 py-2 text-gray-500">{p.sku}</td>
+                              <td className="px-3 py-2 text-gray-600">{p.category}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-emerald-600">₹{p.price}</td>
+                              <td className={`px-3 py-2 text-center font-medium ${p.stock === 0 ? 'text-red-600' : p.stock <= 10 ? 'text-amber-600' : 'text-gray-600'}`}>
+                                {p.stock}
+                              </td>
+                              <td className="px-3 py-2 text-right text-gray-600">₹{p.inventoryValue.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${p.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                  {p.enabled ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  {report.recommendations.length > 0 && (
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-4">
+                      <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        💡 Recommendations & Actions
+                      </h3>
+                      <ul className="space-y-2">
+                        {report.recommendations.map((rec, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
+                            <span className="text-blue-500 mt-1">•</span>
+                            {rec}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Download Buttons */}
+                  <div className="border-t pt-4">
+                    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      <Download size={18} />
+                      Download Report
+                    </h3>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        onClick={() => downloadReport('csv')}
+                        variant="outline"
+                        className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        <FileSpreadsheet size={18} />
+                        Download CSV
+                      </Button>
+                      <Button
+                        onClick={() => downloadReport('excel')}
+                        variant="outline"
+                        className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      >
+                        <FileSpreadsheet size={18} />
+                        Download Excel
+                      </Button>
+                      <Button
+                        onClick={() => downloadReport('pdf')}
+                        variant="outline"
+                        className="gap-2 border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        <FileText size={18} />
+                        Download PDF
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsReportsOpen(false)}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>

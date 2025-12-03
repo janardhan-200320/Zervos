@@ -63,6 +63,58 @@ export default function Step1BusinessDetails() {
 
   const handleNext = () => {
     updateData({ businessName, businessLogo, location, description, websiteUrl, currency });
+    
+    // Save business details to localStorage immediately for persistence
+    try {
+      // Update organization profile
+      const existingOrg = localStorage.getItem('zervos_organization');
+      const orgProfile = existingOrg ? JSON.parse(existingOrg) : {};
+      const updatedOrg = {
+        ...orgProfile,
+        businessName: businessName.trim(),
+        name: businessName.trim(),
+        logo: businessLogo || '',
+        tagline: description || '',
+        description: description || '',
+        website: websiteUrl || '',
+        address: location || '',
+        location: location || '',
+        currency: currency || 'INR',
+      };
+      localStorage.setItem('zervos_organization', JSON.stringify(updatedOrg));
+      
+      // Update company profile
+      const existingCompany = localStorage.getItem('zervos_company');
+      const companyProfile = existingCompany ? JSON.parse(existingCompany) : {};
+      const updatedCompany = {
+        ...companyProfile,
+        name: businessName.trim(),
+        businessName: businessName.trim(),
+        logo: businessLogo || '',
+        location: location || '',
+        description: description || '',
+        website: websiteUrl || '',
+        currency: currency || 'INR',
+      };
+      localStorage.setItem('zervos_company', JSON.stringify(updatedCompany));
+      
+      // Update booking page settings
+      const existingBooking = localStorage.getItem('zervos_booking_page');
+      const bookingSettings = existingBooking ? JSON.parse(existingBooking) : {};
+      const updatedBooking = {
+        ...bookingSettings,
+        businessName: businessName.trim(),
+        logo: businessLogo || '',
+        tagline: description || '',
+        welcomeMessage: `Welcome to ${businessName.trim()}! Book your appointment with us.`,
+        website: websiteUrl || '',
+        address: location || '',
+      };
+      localStorage.setItem('zervos_booking_page', JSON.stringify(updatedBooking));
+    } catch (e) {
+      console.error('Error saving business details to localStorage:', e);
+    }
+    
     nextStep();
   };
 

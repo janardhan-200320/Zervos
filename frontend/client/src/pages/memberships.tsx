@@ -108,9 +108,21 @@ export default function MembershipsPage() {
   const [showReferralDialog, setShowReferralDialog] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Customer | null>(null);
   const [showQRDialog, setShowQRDialog] = useState(false);
+  const [showEditTierDialog, setShowEditTierDialog] = useState(false);
+  const [editingTier, setEditingTier] = useState<MembershipTier | null>(null);
+  const [tierFormData, setTierFormData] = useState({
+    id: '',
+    name: '',
+    minSpend: '',
+    pointsPerRupee: '',
+    discount: '',
+    benefits: [''],
+    color: 'text-orange-700',
+    gradient: 'from-orange-400 to-orange-600',
+  });
 
-  // Membership Tiers Configuration
-  const [membershipTiers] = useState<MembershipTier[]>([
+  // Membership Tiers Configuration - Now editable
+  const [membershipTiers, setMembershipTiers] = useState<MembershipTier[]>([
     {
       id: 'bronze',
       name: 'Bronze',
@@ -308,6 +320,105 @@ export default function MembershipsPage() {
         variant: 'destructive',
       });
     }
+  };
+
+  // Tier Management Functions
+  const openEditTier = (tier: MembershipTier) => {
+    setEditingTier(tier);
+    setTierFormData({
+      id: tier.id,
+      name: tier.name,
+      minSpend: tier.minSpend.toString(),
+      pointsPerRupee: tier.pointsPerRupee.toString(),
+      discount: tier.discount.toString(),
+      benefits: tier.benefits.length > 0 ? tier.benefits : [''],
+      color: tier.color,
+      gradient: tier.gradient,
+    });
+    setShowEditTierDialog(true);
+  };
+
+  const handleEditTier = () => {
+    if (!tierFormData.name.trim()) {
+      toast({
+        title: 'Required Fields',
+        description: 'Please fill in tier name',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const updatedTier = {
+      ...editingTier!,
+      name: tierFormData.name,
+      minSpend: parseInt(tierFormData.minSpend) || 0,
+      pointsPerRupee: parseFloat(tierFormData.pointsPerRupee) || 1,
+      discount: parseInt(tierFormData.discount) || 0,
+      benefits: tierFormData.benefits.filter(b => b.trim() !== ''),
+      color: tierFormData.color,
+      gradient: tierFormData.gradient,
+    };
+
+    const updated = membershipTiers.map(t => t.id === editingTier!.id ? updatedTier : t);
+    setMembershipTiers(updated);
+    
+    // Save to localStorage
+    const workspaceId = selectedWorkspace?.id || 'default';
+    localStorage.setItem(`membership_tiers_${workspaceId}`, JSON.stringify(updated));
+    
+    setShowEditTierDialog(false);
+    setEditingTier(null);
+    
+    toast({
+      title: 'Tier Updated',
+      description: `${tierFormData.name} tier has been updated`,
+    });
+  };
+
+  const handleDeleteTier = (tierId: string) => {
+    if (membershipTiers.length <= 1) {
+      toast({
+        title: 'Cannot Delete',
+        description: 'You must have at least one membership tier',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const tier = membershipTiers.find(t => t.id === tierId);
+    if (!confirm(`Delete "${tier?.name}" tier? Members in this tier will be moved to Bronze.`)) {
+      return;
+    }
+
+    const updated = membershipTiers.filter(t => t.id !== tierId);
+    setMembershipTiers(updated);
+    
+    // Save to localStorage
+    const workspaceId = selectedWorkspace?.id || 'default';
+    localStorage.setItem(`membership_tiers_${workspaceId}`, JSON.stringify(updated));
+    
+    toast({
+      title: 'Tier Deleted',
+      description: `${tier?.name} tier has been removed`,
+    });
+  };
+
+  const addTierBenefit = () => {
+    setTierFormData({
+      ...tierFormData,
+      benefits: [...tierFormData.benefits, ''],
+    });
+  };
+
+  const updateTierBenefit = (index: number, value: string) => {
+    const updated = [...tierFormData.benefits];
+    updated[index] = value;
+    setTierFormData({ ...tierFormData, benefits: updated });
+  };
+
+  const removeTierBenefit = (index: number) => {
+    const updated = tierFormData.benefits.filter((_, i) => i !== index);
+    setTierFormData({ ...tierFormData, benefits: updated });
   };
 
   // Generate unique referral code
@@ -953,6 +1064,24 @@ export default function MembershipsPage() {
                               Spend ₹{tier.minSpend.toLocaleString()}+ to unlock
                             </CardDescription>
                           </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEditTier(tier)}
+                            className="h-8"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteTier(tier.id)}
+                            className="h-8 text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
                     </CardHeader>
@@ -1910,6 +2039,162 @@ export default function MembershipsPage() {
                 </Button>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Tier Dialog */}
+        <Dialog open={showEditTierDialog} onOpenChange={setShowEditTierDialog}>
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Edit className="h-5 w-5 text-purple-600" />
+                Edit Membership Tier
+              </DialogTitle>
+              <DialogDescription>
+                Update tier details and benefits. Changes affect all members in this tier.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tier Name *</Label>
+                  <Input
+                    placeholder="e.g., Platinum"
+                    value={tierFormData.name}
+                    onChange={(e) => setTierFormData({ ...tierFormData, name: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Minimum Spend (₹)</Label>
+                  <Input
+                    type="number"
+                    placeholder="10000"
+                    value={tierFormData.minSpend}
+                    onChange={(e) => setTierFormData({ ...tierFormData, minSpend: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Points per ₹1 Spent</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    placeholder="1.5"
+                    value={tierFormData.pointsPerRupee}
+                    onChange={(e) => setTierFormData({ ...tierFormData, pointsPerRupee: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Discount (%)</Label>
+                  <Input
+                    type="number"
+                    placeholder="10"
+                    value={tierFormData.discount}
+                    onChange={(e) => setTierFormData({ ...tierFormData, discount: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Text Color Class</Label>
+                  <Select value={tierFormData.color} onValueChange={(value) => setTierFormData({ ...tierFormData, color: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="text-orange-700">Orange</SelectItem>
+                      <SelectItem value="text-gray-500">Gray/Silver</SelectItem>
+                      <SelectItem value="text-yellow-600">Yellow/Gold</SelectItem>
+                      <SelectItem value="text-purple-600">Purple</SelectItem>
+                      <SelectItem value="text-blue-600">Blue</SelectItem>
+                      <SelectItem value="text-green-600">Green</SelectItem>
+                      <SelectItem value="text-red-600">Red</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Gradient</Label>
+                  <Select value={tierFormData.gradient} onValueChange={(value) => setTierFormData({ ...tierFormData, gradient: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="from-orange-400 to-orange-600">Orange</SelectItem>
+                      <SelectItem value="from-gray-300 to-gray-500">Gray/Silver</SelectItem>
+                      <SelectItem value="from-yellow-400 to-yellow-600">Yellow/Gold</SelectItem>
+                      <SelectItem value="from-purple-400 to-purple-600">Purple</SelectItem>
+                      <SelectItem value="from-blue-400 to-blue-600">Blue</SelectItem>
+                      <SelectItem value="from-green-400 to-green-600">Green</SelectItem>
+                      <SelectItem value="from-red-400 to-red-600">Red</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Tier Benefits</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addTierBenefit}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add Benefit
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {tierFormData.benefits.map((benefit, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        placeholder="e.g., Free service on birthday"
+                        value={benefit}
+                        onChange={(e) => updateTierBenefit(index, e.target.value)}
+                      />
+                      {tierFormData.benefits.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => removeTierBenefit(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="border-2 rounded-lg p-4 bg-gray-50">
+                <p className="text-sm font-semibold text-gray-700 mb-2">Preview:</p>
+                <div className={`p-3 rounded-lg bg-gradient-to-r ${tierFormData.gradient} text-white inline-block`}>
+                  <p className="text-lg font-bold">{tierFormData.name || 'Tier Name'}</p>
+                  <p className="text-sm">
+                    {tierFormData.pointsPerRupee || 1}x points • {tierFormData.discount || 0}% discount
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setShowEditTierDialog(false);
+                setEditingTier(null);
+              }}>
+                Cancel
+              </Button>
+              <Button onClick={handleEditTier} className="bg-purple-600 hover:bg-purple-700">
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Save Changes
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

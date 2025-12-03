@@ -8,7 +8,6 @@ import {
   FileText,
   Building2,
   Menu,
-  PhoneCall,
   LayoutGrid,
   Bell,
   Sparkles,
@@ -94,12 +93,10 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // Use dynamic labels from company profile
-  const eventTypeLabel = company?.eventTypeLabel || 'Sales Calls';
   const teamMemberLabel = company?.teamMemberLabel || 'Salespersons';
 
   const navigation = [
     { name: 'Dashboard', icon: LayoutGrid, path: '/dashboard' },
-    { name: eventTypeLabel, icon: PhoneCall, path: '/dashboard/sessions' },
     { name: 'Appointments', icon: Calendar, path: '/dashboard/appointments' },
     { name: 'Workflows', icon: Settings, path: '/dashboard/workflows' },
     { name: teamMemberLabel, icon: Users, path: '/dashboard/team-members' },
@@ -115,7 +112,6 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
     { name: 'Income', icon: TrendingUp, path: '/dashboard/income' },
     { name: 'Expenses', icon: TrendingDown, path: '/dashboard/expenses' },
     { name: 'Balance Sheet', icon: Calculator, path: '/dashboard/balance-sheet' },
-    { name: 'Expenditures', icon: FileText, path: '/dashboard/expenditures' },
     { name: 'Staff KPI', icon: TrendingUp, path: '/dashboard/staff-kpi' },
     { name: 'Vendor Management', icon: Truck, path: '/dashboard/vendor-management' },
   ];
@@ -125,7 +121,7 @@ const DashboardLayout = ({ children }: { children: ReactNode }) => {
   ];
 
   const secondaryNavigation = [
-    { name: 'Leads', icon: UserPlus, path: '/dashboard/leads' },
+    { name: 'Customers', icon: Users, path: '/dashboard/customers' },
     { name: 'Invoices', icon: FileText, path: '/dashboard/invoices' },
     { name: 'POS', icon: ShoppingCart, path: '/dashboard/pos' },
     { name: 'Admin Center', icon: LayoutGrid, path: '/dashboard/admin-center' },

@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Clock, Check, X, Edit2, Save, Users, TrendingUp, AlertCircle, ArrowLeft, Download, Upload, Fingerprint, Smartphone, Wifi, Plus } from 'lucide-react';
+import { Calendar, Clock, Check, X, Edit2, Save, Users, TrendingUp, AlertCircle, ArrowLeft, Download, Upload, Fingerprint, Smartphone, Wifi, Plus, Settings, Scan, UserCheck, LogIn, LogOut, Activity, CheckCircle2, XCircle } from 'lucide-react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -25,8 +25,8 @@ interface AttendanceRecord {
   date: string;
   checkIn: string;
   checkOut: string;
-  status: 'present' | 'absent' | 'half-day' | 'late' | 'leave';
-  method: 'auto' | 'manual' | 'biometric' | 'mobile';
+  status: 'present' | 'absent' | 'half-day' | 'late' | 'leave' | string;
+  method: 'auto' | 'manual' | 'biometric' | 'mobile' | string;
   notes?: string;
   location?: string;
   workHours?: number;
@@ -40,10 +40,36 @@ interface TeamMember {
   department?: string;
 }
 
+interface DefaultTimingSettings {
+  checkInTime: string;
+  checkOutTime: string;
+  lateThresholdMinutes: number;
+  halfDayHours: number;
+}
+
+interface BiometricDevice {
+  id: string;
+  name: string;
+  type: 'fingerprint' | 'face-recognition' | 'card-reader' | 'iris-scanner';
+  status: 'connected' | 'disconnected' | 'scanning';
+  lastSync?: string;
+}
+
+interface BiometricLog {
+  id: string;
+  memberId: string;
+  memberName: string;
+  timestamp: string;
+  action: 'check-in' | 'check-out';
+  deviceId: string;
+  deviceName: string;
+  verified: boolean;
+}
+
 export default function TeamAttendancePage() {
   const { selectedWorkspace } = useWorkspace();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'today' | 'history' | 'auto'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'history' | 'auto' | 'biometric'>('today');
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -52,11 +78,52 @@ export default function TeamAttendancePage() {
   const [isMarkAttendanceOpen, setIsMarkAttendanceOpen] = useState(false);
   const [autoTrackingEnabled, setAutoTrackingEnabled] = useState(true);
   const [selectedMember, setSelectedMember] = useState<string>('');
+  
+  // Default timing settings
+  const [defaultTimings, setDefaultTimings] = useState<DefaultTimingSettings>({
+    checkInTime: '09:00',
+    checkOutTime: '18:00',
+    lateThresholdMinutes: 15,
+    halfDayHours: 4
+  });
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
+  const [editingTimings, setEditingTimings] = useState<DefaultTimingSettings>({
+    checkInTime: '09:00',
+    checkOutTime: '18:00',
+    lateThresholdMinutes: 15,
+    halfDayHours: 4
+  });
+  
+  // Custom status and method states
+  const [showCustomStatus, setShowCustomStatus] = useState(false);
+  const [customStatus, setCustomStatus] = useState('');
+  const [showCustomStatusEdit, setShowCustomStatusEdit] = useState(false);
+  const [customStatusEdit, setCustomStatusEdit] = useState('');
+  const [showCustomMethod, setShowCustomMethod] = useState(false);
+  const [customMethod, setCustomMethod] = useState('');
+  
+  // Biometric Integration States
+  const [biometricDevices, setBiometricDevices] = useState<BiometricDevice[]>([
+    { id: 'bio-1', name: 'Main Entrance Scanner', type: 'fingerprint', status: 'connected', lastSync: new Date().toISOString() },
+    { id: 'bio-2', name: 'Reception Face ID', type: 'face-recognition', status: 'connected', lastSync: new Date().toISOString() },
+    { id: 'bio-3', name: 'Card Reader - Floor 1', type: 'card-reader', status: 'disconnected' },
+  ]);
+  const [biometricLogs, setBiometricLogs] = useState<BiometricLog[]>([]);
+  const [isBiometricDialogOpen, setIsBiometricDialogOpen] = useState(false);
+  const [biometricAction, setBiometricAction] = useState<'check-in' | 'check-out'>('check-in');
+  const [selectedBiometricMember, setSelectedBiometricMember] = useState<string>('');
+  const [selectedDevice, setSelectedDevice] = useState<string>('bio-1');
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanResult, setScanResult] = useState<'success' | 'failed' | null>(null);
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [attendanceForm, setAttendanceForm] = useState({
     status: 'present' as AttendanceRecord['status'],
     checkIn: '',
     checkOut: '',
-    notes: ''
+    notes: '',
+    method: 'manual' as AttendanceRecord['method']
   });
 
   const attendanceStorageKey = useMemo(() => {
@@ -65,6 +132,14 @@ export default function TeamAttendancePage() {
 
   const teamMembersStorageKey = useMemo(() => {
     return selectedWorkspace ? `zervos_team_members::${selectedWorkspace.id}` : null;
+  }, [selectedWorkspace]);
+
+  const timingsStorageKey = useMemo(() => {
+    return selectedWorkspace ? `zervos_attendance_timings::${selectedWorkspace.id}` : null;
+  }, [selectedWorkspace]);
+
+  const biometricLogsStorageKey = useMemo(() => {
+    return selectedWorkspace ? `zervos_biometric_logs::${selectedWorkspace.id}` : null;
   }, [selectedWorkspace]);
 
   // Load team members
@@ -88,6 +163,243 @@ export default function TeamAttendancePage() {
       }
     } catch {}
   }, [attendanceStorageKey]);
+
+  // Load default timing settings
+  useEffect(() => {
+    if (!timingsStorageKey) return;
+    try {
+      const saved = localStorage.getItem(timingsStorageKey);
+      if (saved) {
+        const parsedTimings = JSON.parse(saved);
+        setDefaultTimings(parsedTimings);
+        setEditingTimings(parsedTimings);
+      }
+    } catch {}
+  }, [timingsStorageKey]);
+
+  // Save timing settings
+  const handleSaveTimings = () => {
+    setDefaultTimings(editingTimings);
+    if (timingsStorageKey) {
+      localStorage.setItem(timingsStorageKey, JSON.stringify(editingTimings));
+    }
+    toast({ title: 'Success', description: 'Default timing settings saved successfully' });
+    setIsSettingsDialogOpen(false);
+  };
+
+  // Load biometric logs
+  useEffect(() => {
+    if (!biometricLogsStorageKey) return;
+    try {
+      const saved = localStorage.getItem(biometricLogsStorageKey);
+      if (saved) {
+        setBiometricLogs(JSON.parse(saved));
+      }
+    } catch {}
+  }, [biometricLogsStorageKey]);
+
+  // Biometric Scanning Simulation
+  const startBiometricScan = () => {
+    if (!selectedBiometricMember) {
+      toast({ title: 'Error', description: 'Please select a team member', variant: 'destructive' });
+      return;
+    }
+
+    const device = biometricDevices.find(d => d.id === selectedDevice);
+    if (!device || device.status === 'disconnected') {
+      toast({ title: 'Error', description: 'Selected device is not connected', variant: 'destructive' });
+      return;
+    }
+
+    // Check if already checked in/out today
+    const today = new Date().toISOString().split('T')[0];
+    const existingRecord = attendanceRecords.find(r => r.memberId === selectedBiometricMember && r.date === today);
+    
+    if (biometricAction === 'check-in' && existingRecord?.checkIn) {
+      toast({ title: 'Already Checked In', description: 'This member has already checked in today', variant: 'destructive' });
+      return;
+    }
+    
+    if (biometricAction === 'check-out' && !existingRecord?.checkIn) {
+      toast({ title: 'Not Checked In', description: 'This member needs to check in first', variant: 'destructive' });
+      return;
+    }
+    
+    if (biometricAction === 'check-out' && existingRecord?.checkOut) {
+      toast({ title: 'Already Checked Out', description: 'This member has already checked out today', variant: 'destructive' });
+      return;
+    }
+
+    setIsScanning(true);
+    setScanProgress(0);
+    setScanResult(null);
+
+    // Update device status to scanning
+    setBiometricDevices(prev => prev.map(d => 
+      d.id === selectedDevice ? { ...d, status: 'scanning' as const } : d
+    ));
+
+    // Simulate scanning progress
+    let progress = 0;
+    scanIntervalRef.current = setInterval(() => {
+      progress += Math.random() * 15 + 5;
+      if (progress >= 100) {
+        progress = 100;
+        if (scanIntervalRef.current) {
+          clearInterval(scanIntervalRef.current);
+        }
+        
+        // Simulate 95% success rate
+        const success = Math.random() > 0.05;
+        setScanResult(success ? 'success' : 'failed');
+        
+        // Reset device status
+        setBiometricDevices(prev => prev.map(d => 
+          d.id === selectedDevice ? { ...d, status: 'connected' as const, lastSync: new Date().toISOString() } : d
+        ));
+
+        if (success) {
+          // Process biometric attendance
+          processBiometricAttendance();
+        } else {
+          toast({ title: 'Scan Failed', description: 'Biometric verification failed. Please try again.', variant: 'destructive' });
+          setTimeout(() => {
+            setIsScanning(false);
+            setScanResult(null);
+            setScanProgress(0);
+          }, 2000);
+        }
+      }
+      setScanProgress(progress);
+    }, 150);
+  };
+
+  const processBiometricAttendance = () => {
+    const member = teamMembers.find(m => m.id === selectedBiometricMember);
+    const device = biometricDevices.find(d => d.id === selectedDevice);
+    if (!member || !device) return;
+
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
+    
+    // Create biometric log
+    const newLog: BiometricLog = {
+      id: `bio-log-${Date.now()}`,
+      memberId: member.id,
+      memberName: member.name,
+      timestamp: now.toISOString(),
+      action: biometricAction,
+      deviceId: device.id,
+      deviceName: device.name,
+      verified: true
+    };
+    
+    const updatedLogs = [...biometricLogs, newLog];
+    setBiometricLogs(updatedLogs);
+    if (biometricLogsStorageKey) {
+      localStorage.setItem(biometricLogsStorageKey, JSON.stringify(updatedLogs));
+    }
+
+    // Update attendance record
+    if (biometricAction === 'check-in') {
+      // Determine if late
+      const [defH, defM] = defaultTimings.checkInTime.split(':').map(Number);
+      const [curH, curM] = currentTime.split(':').map(Number);
+      const lateMinutes = ((curH * 60 + curM) - (defH * 60 + defM));
+      const isLate = lateMinutes > defaultTimings.lateThresholdMinutes;
+
+      const newRecord: AttendanceRecord = {
+        id: `${Date.now()}-${member.id}`,
+        memberId: member.id,
+        memberName: member.name,
+        date: today,
+        checkIn: currentTime,
+        checkOut: '',
+        status: isLate ? 'late' : 'present',
+        method: 'biometric',
+        location: device.name,
+        notes: `Verified via ${device.type === 'fingerprint' ? 'Fingerprint' : device.type === 'face-recognition' ? 'Face Recognition' : device.type === 'card-reader' ? 'Card' : 'Iris'} Scanner`,
+        workHours: 0
+      };
+
+      const updated = [...attendanceRecords, newRecord];
+      setAttendanceRecords(updated);
+      if (attendanceStorageKey) {
+        localStorage.setItem(attendanceStorageKey, JSON.stringify(updated));
+      }
+
+      toast({ 
+        title: '✓ Check-In Successful', 
+        description: `${member.name} checked in at ${currentTime} via ${device.name}` 
+      });
+    } else {
+      // Check-out: Update existing record
+      const existingRecord = attendanceRecords.find(r => r.memberId === member.id && r.date === today);
+      if (existingRecord) {
+        const [h1, m1] = existingRecord.checkIn.split(':').map(Number);
+        const [h2, m2] = currentTime.split(':').map(Number);
+        const workHours = ((h2 * 60 + m2) - (h1 * 60 + m1)) / 60;
+
+        const updatedRecord = {
+          ...existingRecord,
+          checkOut: currentTime,
+          workHours: workHours,
+          notes: `${existingRecord.notes || ''} | Checked out via ${device.name}`.trim()
+        };
+
+        const updated = attendanceRecords.map(r => r.id === existingRecord.id ? updatedRecord : r);
+        setAttendanceRecords(updated);
+        if (attendanceStorageKey) {
+          localStorage.setItem(attendanceStorageKey, JSON.stringify(updated));
+        }
+
+        toast({ 
+          title: '✓ Check-Out Successful', 
+          description: `${member.name} checked out at ${currentTime}. Total: ${workHours.toFixed(1)} hrs` 
+        });
+      }
+    }
+
+    // Close dialog after short delay
+    setTimeout(() => {
+      setIsBiometricDialogOpen(false);
+      setIsScanning(false);
+      setScanResult(null);
+      setScanProgress(0);
+      setSelectedBiometricMember('');
+    }, 1500);
+  };
+
+  const cancelScan = () => {
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+    }
+    setIsScanning(false);
+    setScanProgress(0);
+    setScanResult(null);
+    setBiometricDevices(prev => prev.map(d => 
+      d.id === selectedDevice ? { ...d, status: 'connected' as const } : d
+    ));
+  };
+
+  const toggleDeviceConnection = (deviceId: string) => {
+    setBiometricDevices(prev => prev.map(d => 
+      d.id === deviceId ? { 
+        ...d, 
+        status: d.status === 'connected' ? 'disconnected' : 'connected',
+        lastSync: d.status === 'disconnected' ? new Date().toISOString() : d.lastSync
+      } : d
+    ));
+    
+    const device = biometricDevices.find(d => d.id === deviceId);
+    if (device) {
+      toast({ 
+        title: device.status === 'connected' ? 'Device Disconnected' : 'Device Connected',
+        description: `${device.name} is now ${device.status === 'connected' ? 'offline' : 'online'}`
+      });
+    }
+  };
 
   // Auto-tracking simulation
   useEffect(() => {
@@ -154,15 +466,25 @@ export default function TeamAttendancePage() {
     const member = teamMembers.find(m => m.id === selectedMember);
     if (!member) return;
 
+    // Use custom status if provided
+    const finalStatus = showCustomStatus && customStatus.trim() 
+      ? customStatus.trim().toLowerCase().replace(/\s+/g, '-')
+      : attendanceForm.status;
+
+    // Use custom method if provided
+    const finalMethod = showCustomMethod && customMethod.trim()
+      ? customMethod.trim().toLowerCase().replace(/\s+/g, '-')
+      : attendanceForm.method;
+
     const newRecord: AttendanceRecord = {
       id: `${Date.now()}-${selectedMember}`,
       memberId: selectedMember,
       memberName: member.name,
       date: selectedDate,
-      checkIn: attendanceForm.checkIn || new Date().toTimeString().slice(0, 5),
-      checkOut: attendanceForm.checkOut,
-      status: attendanceForm.status,
-      method: 'manual',
+      checkIn: attendanceForm.checkIn || defaultTimings.checkInTime,
+      checkOut: attendanceForm.checkOut || '',
+      status: finalStatus,
+      method: finalMethod,
       notes: attendanceForm.notes,
       workHours: 0
     };
@@ -181,8 +503,12 @@ export default function TeamAttendancePage() {
 
     toast({ title: 'Success', description: 'Attendance marked successfully' });
     setIsMarkAttendanceOpen(false);
-    setAttendanceForm({ status: 'present', checkIn: '', checkOut: '', notes: '' });
+    setAttendanceForm({ status: 'present', checkIn: '', checkOut: '', notes: '', method: 'manual' });
     setSelectedMember('');
+    setShowCustomStatus(false);
+    setCustomStatus('');
+    setShowCustomMethod(false);
+    setCustomMethod('');
   };
 
   const handleEditRecord = (record: AttendanceRecord) => {
@@ -192,6 +518,11 @@ export default function TeamAttendancePage() {
 
   const handleSaveEdit = () => {
     if (!editingRecord) return;
+
+    // Use custom status if provided in edit
+    if (showCustomStatusEdit && customStatusEdit.trim()) {
+      editingRecord.status = customStatusEdit.trim().toLowerCase().replace(/\s+/g, '-');
+    }
 
     if (editingRecord.checkIn && editingRecord.checkOut) {
       const [h1, m1] = editingRecord.checkIn.split(':').map(Number);
@@ -208,6 +539,8 @@ export default function TeamAttendancePage() {
     toast({ title: 'Success', description: 'Attendance updated successfully' });
     setIsEditDialogOpen(false);
     setEditingRecord(null);
+    setShowCustomStatusEdit(false);
+    setCustomStatusEdit('');
   };
 
   const quickMarkAttendance = (memberId: string, memberName: string, status: 'present' | 'absent' | 'leave' | 'half-day') => {
@@ -298,6 +631,17 @@ export default function TeamAttendancePage() {
           </div>
           <div className="flex gap-2">
             <Button
+              onClick={() => {
+                setEditingTimings(defaultTimings);
+                setIsSettingsDialogOpen(true);
+              }}
+              variant="outline"
+              className="gap-2"
+            >
+              <Settings size={18} />
+              Default Timings
+            </Button>
+            <Button
               onClick={exportAttendance}
               variant="outline"
               className="gap-2"
@@ -367,6 +711,10 @@ export default function TeamAttendancePage() {
           <TabsList>
             <TabsTrigger value="today">Today's Attendance</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
+            <TabsTrigger value="biometric" className="gap-1">
+              <Fingerprint className="h-4 w-4" />
+              Biometric
+            </TabsTrigger>
             <TabsTrigger value="auto">Auto Tracking</TabsTrigger>
           </TabsList>
 
@@ -738,7 +1086,12 @@ export default function TeamAttendancePage() {
                     <Fingerprint className="h-8 w-8 text-purple-600 mb-2" />
                     <h3 className="font-semibold mb-1">Biometric Integration</h3>
                     <p className="text-sm text-gray-600">Connect fingerprint or face recognition devices</p>
-                    <Button variant="outline" size="sm" className="mt-3 w-full">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-3 w-full"
+                      onClick={() => setActiveTab('biometric')}
+                    >
                       Configure
                     </Button>
                   </div>
@@ -776,16 +1129,236 @@ export default function TeamAttendancePage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Biometric Integration Tab */}
+          <TabsContent value="biometric">
+            <div className="space-y-6">
+              {/* Biometric Action Buttons */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="border-green-200 bg-gradient-to-br from-green-50 to-white cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => {
+                    setBiometricAction('check-in');
+                    setIsBiometricDialogOpen(true);
+                  }}>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                        <LogIn className="h-8 w-8 text-green-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-green-700">Biometric Check-In</h3>
+                        <p className="text-sm text-gray-600">Scan fingerprint or face to check in</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-red-200 bg-gradient-to-br from-red-50 to-white cursor-pointer hover:shadow-lg transition-shadow"
+                  onClick={() => {
+                    setBiometricAction('check-out');
+                    setIsBiometricDialogOpen(true);
+                  }}>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                        <LogOut className="h-8 w-8 text-red-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-red-700">Biometric Check-Out</h3>
+                        <p className="text-sm text-gray-600">Scan fingerprint or face to check out</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Connected Devices */}
+              <Card>
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <CardTitle className="flex items-center gap-2">
+                      <Fingerprint className="h-5 w-5 text-purple-600" />
+                      Connected Biometric Devices
+                    </CardTitle>
+                    <Badge variant="outline" className="gap-1">
+                      <Activity className="h-3 w-3" />
+                      {biometricDevices.filter(d => d.status === 'connected').length} Online
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {biometricDevices.map(device => (
+                      <div 
+                        key={device.id}
+                        className={`flex items-center justify-between p-4 border rounded-lg ${
+                          device.status === 'connected' ? 'border-green-200 bg-green-50/50' :
+                          device.status === 'scanning' ? 'border-blue-200 bg-blue-50/50' :
+                          'border-gray-200 bg-gray-50/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                            device.status === 'connected' ? 'bg-green-100' :
+                            device.status === 'scanning' ? 'bg-blue-100 animate-pulse' :
+                            'bg-gray-100'
+                          }`}>
+                            {device.type === 'fingerprint' && <Fingerprint className={`h-6 w-6 ${device.status === 'connected' ? 'text-green-600' : device.status === 'scanning' ? 'text-blue-600' : 'text-gray-400'}`} />}
+                            {device.type === 'face-recognition' && <UserCheck className={`h-6 w-6 ${device.status === 'connected' ? 'text-green-600' : device.status === 'scanning' ? 'text-blue-600' : 'text-gray-400'}`} />}
+                            {device.type === 'card-reader' && <Scan className={`h-6 w-6 ${device.status === 'connected' ? 'text-green-600' : device.status === 'scanning' ? 'text-blue-600' : 'text-gray-400'}`} />}
+                            {device.type === 'iris-scanner' && <Activity className={`h-6 w-6 ${device.status === 'connected' ? 'text-green-600' : device.status === 'scanning' ? 'text-blue-600' : 'text-gray-400'}`} />}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-gray-900">{device.name}</h4>
+                            <div className="flex items-center gap-2 text-sm text-gray-500">
+                              <span className="capitalize">{device.type.replace('-', ' ')}</span>
+                              {device.lastSync && (
+                                <span>• Last sync: {new Date(device.lastSync).toLocaleTimeString()}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge className={`${
+                            device.status === 'connected' ? 'bg-green-100 text-green-800' :
+                            device.status === 'scanning' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {device.status === 'connected' && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                            {device.status === 'scanning' && <Activity className="h-3 w-3 mr-1 animate-pulse" />}
+                            {device.status === 'disconnected' && <XCircle className="h-3 w-3 mr-1" />}
+                            {device.status.charAt(0).toUpperCase() + device.status.slice(1)}
+                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => toggleDeviceConnection(device.id)}
+                            disabled={device.status === 'scanning'}
+                          >
+                            {device.status === 'connected' ? 'Disconnect' : 'Connect'}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Recent Biometric Logs */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-blue-600" />
+                    Recent Biometric Activity
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {biometricLogs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <Fingerprint className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                      <p>No biometric activity recorded yet</p>
+                      <p className="text-sm">Use biometric check-in/check-out to see activity here</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {biometricLogs.slice().reverse().slice(0, 20).map(log => (
+                        <div 
+                          key={log.id}
+                          className={`flex items-center justify-between p-3 rounded-lg ${
+                            log.action === 'check-in' ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              log.action === 'check-in' ? 'bg-green-100' : 'bg-red-100'
+                            }`}>
+                              {log.action === 'check-in' ? 
+                                <LogIn className="h-5 w-5 text-green-600" /> : 
+                                <LogOut className="h-5 w-5 text-red-600" />
+                              }
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-900">{log.memberName}</div>
+                              <div className="text-xs text-gray-500">
+                                {log.deviceName} • {new Date(log.timestamp).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                          <Badge className={log.action === 'check-in' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                            {log.action === 'check-in' ? 'Check In' : 'Check Out'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Biometric Stats for Today */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-white">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Biometric Check-ins Today</p>
+                        <p className="text-2xl font-bold text-purple-600">
+                          {biometricLogs.filter(l => l.action === 'check-in' && l.timestamp.startsWith(new Date().toISOString().split('T')[0])).length}
+                        </p>
+                      </div>
+                      <Fingerprint className="h-8 w-8 text-purple-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-white">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Biometric Check-outs Today</p>
+                        <p className="text-2xl font-bold text-orange-600">
+                          {biometricLogs.filter(l => l.action === 'check-out' && l.timestamp.startsWith(new Date().toISOString().split('T')[0])).length}
+                        </p>
+                      </div>
+                      <LogOut className="h-8 w-8 text-orange-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-white">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-gray-600">Devices Online</p>
+                        <p className="text-2xl font-bold text-blue-600">
+                          {biometricDevices.filter(d => d.status === 'connected').length} / {biometricDevices.length}
+                        </p>
+                      </div>
+                      <Activity className="h-8 w-8 text-blue-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
         </Tabs>
 
         {/* Mark Attendance Dialog */}
         <Dialog open={isMarkAttendanceOpen} onOpenChange={setIsMarkAttendanceOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Mark Attendance</DialogTitle>
               <DialogDescription>Manually mark attendance for team members</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              {/* Default Timings Info */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 text-blue-700 font-medium text-sm mb-1">
+                  <Clock className="h-4 w-4" />
+                  Default Office Timings
+                </div>
+                <div className="text-xs text-blue-600">
+                  Check-in: {defaultTimings.checkInTime} | Check-out: {defaultTimings.checkOutTime} | Late after: {defaultTimings.lateThresholdMinutes} min
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label>Select Team Member *</Label>
                 <select
@@ -804,17 +1377,94 @@ export default function TeamAttendancePage() {
 
               <div className="space-y-2">
                 <Label>Status *</Label>
-                <select
-                  value={attendanceForm.status}
-                  onChange={(e) => setAttendanceForm({ ...attendanceForm, status: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="present">Present</option>
-                  <option value="absent">Absent</option>
-                  <option value="half-day">Half Day</option>
-                  <option value="late">Late</option>
-                  <option value="leave">On Leave</option>
-                </select>
+                {!showCustomStatus ? (
+                  <select
+                    value={attendanceForm.status}
+                    onChange={(e) => {
+                      if (e.target.value === 'custom') {
+                        setShowCustomStatus(true);
+                      } else {
+                        setAttendanceForm({ ...attendanceForm, status: e.target.value as any });
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                    <option value="half-day">Half Day</option>
+                    <option value="late">Late</option>
+                    <option value="leave">On Leave</option>
+                    <option value="work-from-home">Work From Home</option>
+                    <option value="sick-leave">Sick Leave</option>
+                    <option value="casual-leave">Casual Leave</option>
+                    <option value="custom">+ Custom Status</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Enter custom status..."
+                      value={customStatus}
+                      onChange={(e) => setCustomStatus(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowCustomStatus(false);
+                        setCustomStatus('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tracking Method</Label>
+                {!showCustomMethod ? (
+                  <select
+                    value={attendanceForm.method}
+                    onChange={(e) => {
+                      if (e.target.value === 'custom') {
+                        setShowCustomMethod(true);
+                      } else {
+                        setAttendanceForm({ ...attendanceForm, method: e.target.value as any });
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="manual">Manual Entry</option>
+                    <option value="biometric">Biometric</option>
+                    <option value="mobile">Mobile App</option>
+                    <option value="auto">Auto (System)</option>
+                    <option value="card-swipe">Card Swipe</option>
+                    <option value="face-recognition">Face Recognition</option>
+                    <option value="custom">+ Custom Method</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Enter custom method..."
+                      value={customMethod}
+                      onChange={(e) => setCustomMethod(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowCustomMethod(false);
+                        setCustomMethod('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -824,7 +1474,9 @@ export default function TeamAttendancePage() {
                     type="time"
                     value={attendanceForm.checkIn}
                     onChange={(e) => setAttendanceForm({ ...attendanceForm, checkIn: e.target.value })}
+                    placeholder={defaultTimings.checkInTime}
                   />
+                  <p className="text-xs text-gray-500">Default: {defaultTimings.checkInTime}</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Check Out Time</Label>
@@ -832,7 +1484,9 @@ export default function TeamAttendancePage() {
                     type="time"
                     value={attendanceForm.checkOut}
                     onChange={(e) => setAttendanceForm({ ...attendanceForm, checkOut: e.target.value })}
+                    placeholder={defaultTimings.checkOutTime}
                   />
+                  <p className="text-xs text-gray-500">Default: {defaultTimings.checkOutTime}</p>
                 </div>
               </div>
 
@@ -848,7 +1502,13 @@ export default function TeamAttendancePage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsMarkAttendanceOpen(false)}>
+              <Button variant="outline" onClick={() => {
+                setIsMarkAttendanceOpen(false);
+                setShowCustomStatus(false);
+                setCustomStatus('');
+                setShowCustomMethod(false);
+                setCustomMethod('');
+              }}>
                 Cancel
               </Button>
               <Button onClick={handleMarkAttendance} className="bg-blue-600 hover:bg-blue-700">
@@ -861,26 +1521,75 @@ export default function TeamAttendancePage() {
 
         {/* Edit Record Dialog */}
         {editingRecord && (
-          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogContent className="sm:max-w-md">
+          <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+            setIsEditDialogOpen(open);
+            if (!open) {
+              setShowCustomStatusEdit(false);
+              setCustomStatusEdit('');
+            }
+          }}>
+            <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Edit Attendance</DialogTitle>
                 <DialogDescription>Update attendance record for {editingRecord.memberName}</DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
+                {/* Default Timings Info */}
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-blue-700 font-medium text-sm mb-1">
+                    <Clock className="h-4 w-4" />
+                    Default Office Timings
+                  </div>
+                  <div className="text-xs text-blue-600">
+                    Check-in: {defaultTimings.checkInTime} | Check-out: {defaultTimings.checkOutTime}
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Status</Label>
-                  <select
-                    value={editingRecord.status}
-                    onChange={(e) => setEditingRecord({ ...editingRecord, status: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="present">Present</option>
-                    <option value="absent">Absent</option>
-                    <option value="half-day">Half Day</option>
-                    <option value="late">Late</option>
-                    <option value="leave">On Leave</option>
-                  </select>
+                  {!showCustomStatusEdit ? (
+                    <select
+                      value={editingRecord.status}
+                      onChange={(e) => {
+                        if (e.target.value === 'custom') {
+                          setShowCustomStatusEdit(true);
+                        } else {
+                          setEditingRecord({ ...editingRecord, status: e.target.value as any });
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="present">Present</option>
+                      <option value="absent">Absent</option>
+                      <option value="half-day">Half Day</option>
+                      <option value="late">Late</option>
+                      <option value="leave">On Leave</option>
+                      <option value="work-from-home">Work From Home</option>
+                      <option value="sick-leave">Sick Leave</option>
+                      <option value="casual-leave">Casual Leave</option>
+                      <option value="custom">+ Custom Status</option>
+                    </select>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Enter custom status..."
+                        value={customStatusEdit}
+                        onChange={(e) => setCustomStatusEdit(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setShowCustomStatusEdit(false);
+                          setCustomStatusEdit('');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -891,6 +1600,7 @@ export default function TeamAttendancePage() {
                       value={editingRecord.checkIn}
                       onChange={(e) => setEditingRecord({ ...editingRecord, checkIn: e.target.value })}
                     />
+                    <p className="text-xs text-gray-500">Default: {defaultTimings.checkInTime}</p>
                   </div>
                   <div className="space-y-2">
                     <Label>Check Out</Label>
@@ -899,6 +1609,7 @@ export default function TeamAttendancePage() {
                       value={editingRecord.checkOut}
                       onChange={(e) => setEditingRecord({ ...editingRecord, checkOut: e.target.value })}
                     />
+                    <p className="text-xs text-gray-500">Default: {defaultTimings.checkOutTime}</p>
                   </div>
                 </div>
 
@@ -913,7 +1624,11 @@ export default function TeamAttendancePage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                <Button variant="outline" onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setShowCustomStatusEdit(false);
+                  setCustomStatusEdit('');
+                }}>
                   Cancel
                 </Button>
                 <Button onClick={handleSaveEdit} className="bg-blue-600 hover:bg-blue-700">
@@ -924,6 +1639,300 @@ export default function TeamAttendancePage() {
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Default Timings Settings Dialog */}
+        <Dialog open={isSettingsDialogOpen} onOpenChange={setIsSettingsDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5 text-blue-600" />
+                Default Timing Settings
+              </DialogTitle>
+              <DialogDescription>
+                Set default check-in and check-out timings for all employees
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Default Check-In Time *</Label>
+                  <Input
+                    type="time"
+                    value={editingTimings.checkInTime}
+                    onChange={(e) => setEditingTimings({ ...editingTimings, checkInTime: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500">When employees should check in</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Default Check-Out Time *</Label>
+                  <Input
+                    type="time"
+                    value={editingTimings.checkOutTime}
+                    onChange={(e) => setEditingTimings({ ...editingTimings, checkOutTime: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500">When employees should check out</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Late Threshold (minutes)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={editingTimings.lateThresholdMinutes}
+                    onChange={(e) => setEditingTimings({ ...editingTimings, lateThresholdMinutes: parseInt(e.target.value) || 0 })}
+                  />
+                  <p className="text-xs text-gray-500">Mark as late after these minutes</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Half Day Hours</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={editingTimings.halfDayHours}
+                    onChange={(e) => setEditingTimings({ ...editingTimings, halfDayHours: parseInt(e.target.value) || 4 })}
+                  />
+                  <p className="text-xs text-gray-500">Working hours for half day</p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5" />
+                  <div className="text-sm text-yellow-700">
+                    <strong>Note:</strong> These settings will apply as defaults for all employees. Individual records can still be edited with different timings.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsSettingsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveTimings} className="bg-blue-600 hover:bg-blue-700">
+                <Save className="mr-2 h-4 w-4" />
+                Save Settings
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Biometric Scanning Dialog */}
+        <Dialog open={isBiometricDialogOpen} onOpenChange={(open) => {
+          if (!isScanning) {
+            setIsBiometricDialogOpen(open);
+            if (!open) {
+              setSelectedBiometricMember('');
+              setScanResult(null);
+              setScanProgress(0);
+            }
+          }
+        }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Fingerprint className={`h-5 w-5 ${biometricAction === 'check-in' ? 'text-green-600' : 'text-red-600'}`} />
+                Biometric {biometricAction === 'check-in' ? 'Check-In' : 'Check-Out'}
+              </DialogTitle>
+              <DialogDescription>
+                {isScanning 
+                  ? 'Scanning in progress. Please wait...'
+                  : `Select employee and device to ${biometricAction === 'check-in' ? 'check in' : 'check out'}`
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4 py-4">
+              {!isScanning ? (
+                <>
+                  {/* Employee Selection */}
+                  <div className="space-y-2">
+                    <Label>Select Employee *</Label>
+                    <select
+                      value={selectedBiometricMember}
+                      onChange={(e) => setSelectedBiometricMember(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Choose an employee</option>
+                      {teamMembers.map(member => {
+                        const today = new Date().toISOString().split('T')[0];
+                        const record = attendanceRecords.find(r => r.memberId === member.id && r.date === today);
+                        const canCheckIn = biometricAction === 'check-in' && !record?.checkIn;
+                        const canCheckOut = biometricAction === 'check-out' && record?.checkIn && !record?.checkOut;
+                        const isDisabled = biometricAction === 'check-in' ? !canCheckIn && record?.checkIn : !canCheckOut;
+                        
+                        return (
+                          <option 
+                            key={member.id} 
+                            value={member.id}
+                            disabled={isDisabled}
+                          >
+                            {member.name} - {member.role}
+                            {record?.checkIn && biometricAction === 'check-in' ? ' (Already checked in)' : ''}
+                            {!record?.checkIn && biometricAction === 'check-out' ? ' (Not checked in yet)' : ''}
+                            {record?.checkOut && biometricAction === 'check-out' ? ' (Already checked out)' : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Device Selection */}
+                  <div className="space-y-2">
+                    <Label>Select Biometric Device *</Label>
+                    <div className="space-y-2">
+                      {biometricDevices.map(device => (
+                        <div 
+                          key={device.id}
+                          onClick={() => device.status === 'connected' && setSelectedDevice(device.id)}
+                          className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${
+                            selectedDevice === device.id && device.status === 'connected'
+                              ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                              : device.status === 'connected'
+                                ? 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
+                                : 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              device.status === 'connected' ? 'bg-green-100' : 'bg-gray-100'
+                            }`}>
+                              {device.type === 'fingerprint' && <Fingerprint className={`h-5 w-5 ${device.status === 'connected' ? 'text-green-600' : 'text-gray-400'}`} />}
+                              {device.type === 'face-recognition' && <UserCheck className={`h-5 w-5 ${device.status === 'connected' ? 'text-green-600' : 'text-gray-400'}`} />}
+                              {device.type === 'card-reader' && <Scan className={`h-5 w-5 ${device.status === 'connected' ? 'text-green-600' : 'text-gray-400'}`} />}
+                              {device.type === 'iris-scanner' && <Activity className={`h-5 w-5 ${device.status === 'connected' ? 'text-green-600' : 'text-gray-400'}`} />}
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-900">{device.name}</div>
+                              <div className="text-xs text-gray-500 capitalize">{device.type.replace('-', ' ')}</div>
+                            </div>
+                          </div>
+                          <Badge className={device.status === 'connected' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}>
+                            {device.status === 'connected' ? 'Online' : 'Offline'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Instructions */}
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <Fingerprint className="h-5 w-5 text-blue-600 mt-0.5" />
+                      <div className="text-sm text-blue-700">
+                        <strong>Instructions:</strong>
+                        <ul className="mt-1 list-disc list-inside space-y-1">
+                          <li>Select an employee from the dropdown</li>
+                          <li>Choose an online biometric device</li>
+                          <li>Click "Start Scan" to begin verification</li>
+                          <li>The employee's attendance will be recorded automatically</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Scanning Animation */
+                <div className="flex flex-col items-center py-8">
+                  <div className={`relative w-32 h-32 rounded-full flex items-center justify-center ${
+                    scanResult === 'success' ? 'bg-green-100' :
+                    scanResult === 'failed' ? 'bg-red-100' :
+                    'bg-blue-100'
+                  }`}>
+                    {scanResult === null && (
+                      <>
+                        <div className="absolute inset-0 rounded-full border-4 border-blue-500 animate-ping opacity-30"></div>
+                        <div className="absolute inset-2 rounded-full border-4 border-blue-400 animate-pulse"></div>
+                      </>
+                    )}
+                    {scanResult === 'success' ? (
+                      <CheckCircle2 className="h-16 w-16 text-green-600" />
+                    ) : scanResult === 'failed' ? (
+                      <XCircle className="h-16 w-16 text-red-600" />
+                    ) : (
+                      <Fingerprint className="h-16 w-16 text-blue-600 animate-pulse" />
+                    )}
+                  </div>
+                  
+                  <div className="mt-6 w-full max-w-xs">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-600">
+                        {scanResult === 'success' ? 'Verified!' :
+                         scanResult === 'failed' ? 'Verification Failed' :
+                         'Scanning...'}
+                      </span>
+                      <span className="text-blue-600 font-medium">{Math.round(scanProgress)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5">
+                      <div 
+                        className={`h-2.5 rounded-full transition-all duration-300 ${
+                          scanResult === 'success' ? 'bg-green-500' :
+                          scanResult === 'failed' ? 'bg-red-500' :
+                          'bg-blue-500'
+                        }`}
+                        style={{ width: `${scanProgress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {scanResult === null && (
+                    <p className="mt-4 text-sm text-gray-500 animate-pulse">
+                      Place your finger on the scanner...
+                    </p>
+                  )}
+                  
+                  {scanResult === 'success' && (
+                    <p className="mt-4 text-sm text-green-600 font-medium">
+                      ✓ {biometricAction === 'check-in' ? 'Check-in' : 'Check-out'} recorded successfully!
+                    </p>
+                  )}
+                  
+                  {scanResult === 'failed' && (
+                    <p className="mt-4 text-sm text-red-600">
+                      Fingerprint not recognized. Please try again.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <DialogFooter>
+              {!isScanning ? (
+                <>
+                  <Button variant="outline" onClick={() => {
+                    setIsBiometricDialogOpen(false);
+                    setSelectedBiometricMember('');
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={startBiometricScan}
+                    disabled={!selectedBiometricMember || !biometricDevices.find(d => d.id === selectedDevice && d.status === 'connected')}
+                    className={biometricAction === 'check-in' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
+                  >
+                    <Scan className="mr-2 h-4 w-4" />
+                    Start Scan
+                  </Button>
+                </>
+              ) : scanResult === null ? (
+                <Button variant="outline" onClick={cancelScan}>
+                  Cancel Scan
+                </Button>
+              ) : scanResult === 'failed' ? (
+                <Button onClick={() => {
+                  setScanResult(null);
+                  setScanProgress(0);
+                  setIsScanning(false);
+                }} className="bg-blue-600 hover:bg-blue-700">
+                  Try Again
+                </Button>
+              ) : null}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

@@ -126,6 +126,7 @@ export default function Step4CustomLabels() {
       // Persist minimal company profile for the dashboard
       const companyProfile = {
         name: finalData.businessName || 'Your Company',
+        businessName: finalData.businessName || 'Your Company',
         industry: finalData.industries?.[0] || 'General',
         eventTypeLabel: finalData.eventTypeLabel,
         teamMemberLabel: finalData.teamMemberLabel,
@@ -133,18 +134,58 @@ export default function Step4CustomLabels() {
         availableTimeStart: finalData.availableTimeStart,
         availableTimeEnd: finalData.availableTimeEnd,
         currency: finalData.currency || 'INR',
+        logo: finalData.businessLogo || '',
+        location: finalData.location || '',
+        description: finalData.description || '',
+        website: finalData.websiteUrl || '',
+        timezone: finalData.timezone || 'Asia/Kolkata',
   id: created?.id || undefined,
       };
       try {
         localStorage.setItem('zervos_company', JSON.stringify(companyProfile));
         
-        // Also save to zervos_organization for ProfileDropdown
+        // Save comprehensive organization data for booking page and profile
         const orgProfile = {
           businessName: finalData.businessName || 'Your Company',
-          email: 'No email',
-          timezone: finalData.timezone || 'America/New_York',
+          name: finalData.businessName || 'Your Company',
+          logo: finalData.businessLogo || '',
+          tagline: finalData.description || '',
+          description: finalData.description || '',
+          email: '',
+          phone: '',
+          website: finalData.websiteUrl || '',
+          address: finalData.location || '',
+          location: finalData.location || '',
+          timezone: finalData.timezone || 'Asia/Kolkata',
+          currency: finalData.currency || 'INR',
+          industry: finalData.industries?.[0] || 'General',
+          workingHours: `${finalData.availableTimeStart || '09:00 am'} - ${finalData.availableTimeEnd || '06:00 pm'}`,
+          availableDays: finalData.availableDays || [],
+          rating: 4.9,
+          reviewCount: 0,
         };
         localStorage.setItem('zervos_organization', JSON.stringify(orgProfile));
+        
+        // Also save to booking page settings for public booking
+        const bookingPageSettings = {
+          businessName: finalData.businessName || 'Your Company',
+          logo: finalData.businessLogo || '',
+          tagline: finalData.description || '',
+          welcomeMessage: `Welcome to ${finalData.businessName || 'our business'}! Book your appointment with us.`,
+          backgroundColor: '#7C3AED',
+          textColor: '#FFFFFF',
+          buttonColor: '#FFFFFF',
+          showLogo: true,
+          metaTitle: `Book Appointment | ${finalData.businessName || 'Business'}`,
+          metaDescription: `Schedule your appointment at ${finalData.businessName || 'our business'}`,
+          metaKeywords: 'booking, appointment',
+          website: finalData.websiteUrl || '',
+          address: finalData.location || '',
+          workingHours: `${finalData.availableTimeStart || '09:00 am'} - ${finalData.availableTimeEnd || '06:00 pm'}`,
+          rating: 4.9,
+          reviewCount: 0,
+        };
+        localStorage.setItem('zervos_booking_page', JSON.stringify(bookingPageSettings));
       } catch {}
 
       toast({
